@@ -169,16 +169,42 @@ def list_deployments(is_global: Optional[bool] = None) -> Dict[str, Dict[str, An
         local_deps = load_deployments_file(get_local_deployments_path())
         registry = {**global_deps, **local_deps}
 
-    # Discover running DEH containers and register any new ones.
-    # Normalize to the 12-char short ID for comparison.
+    # Discover running DEH containers (docker ps without -a = running only).
+    discovered = _discover_docker_deployments()
+    running_ids = {
+        meta.get("container_id", "")[:12]
+        for meta in discovered.values()
+        if meta.get("container_id")
+    }
+
+    # Remove registry entries for Docker containers that are no longer running.
+    # Skip this when docker isn't installed so we never purge entries we can't verify.
+    if shutil.which("docker"):
+        stale = [
+            dep_id
+            for dep_id, meta in registry.items()
+            if meta.get("engine") == "docker"
+            and meta.get("container_id")
+            and meta["container_id"][:12] not in running_ids
+        ]
+        for dep_id in stale:
+            del registry[dep_id]
+            if is_global is True:
+                delete_deployment(dep_id, is_global=True)
+            elif is_global is False:
+                delete_deployment(dep_id, is_global=False)
+            else:
+                delete_deployment(dep_id, is_global=False)
+                delete_deployment(dep_id, is_global=True)
+
+    # Register any newly discovered containers not yet tracked in the registry.
     known_container_ids = {
         v.get("container_id", "")[:12]
         for v in registry.values()
         if v.get("container_id")
     }
-    for slug, meta in _discover_docker_deployments().items():
+    for slug, meta in discovered.items():
         if meta.get("container_id", "")[:12] not in known_container_ids:
-            # Save to local by default when is_global is None or False
             save_deployment(slug, meta, is_global=is_global is True)
             registry[slug] = meta
 
