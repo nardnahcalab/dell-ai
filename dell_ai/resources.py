@@ -9,6 +9,7 @@ import re
 import shutil
 import socket
 import subprocess
+from pathlib import Path
 from typing import List, Literal, Optional
 
 _PORT_SCAN_START = 8080
@@ -303,3 +304,65 @@ def parse_host_port(snippet: str) -> Optional[int]:
 def inject_host_port(snippet: str, port: int) -> str:
     """Replace the host port in a Docker ``-p HOST:CONTAINER`` flag."""
     return re.sub(r"(-p\s+)\d+(:\d+)", rf"\g<1>{port}\2", snippet)
+
+
+# ---------------------------------------------------------------------------
+# Local weights / HF cache injection
+# ---------------------------------------------------------------------------
+
+CONTAINER_MODEL_PATH = "/data"
+CONTAINER_HF_CACHE_PATH = "/root/.cache/huggingface"
+
+
+def _inject_volume_mount(snippet: str, host_path: str, container_path: str) -> str:
+    """Insert ``-v host_path:container_path`` before the DEH image reference."""
+    return re.sub(
+        r"(registry\.dell\.huggingface\.co/\S+)",
+        f"-v {host_path}:{container_path} " + r"\1",
+        snippet,
+        count=1,
+    )
+
+
+def _replace_model_id(snippet: str, new_value: str) -> str:
+    """Replace the MODEL_ID value in ``-e`` / ``--env`` flags. No-op if absent."""
+    return re.sub(
+        r"((?:-e|--env)[ \t]+)MODEL_ID=\S+",
+        r"\1" + f"MODEL_ID={new_value}",
+        snippet,
+    )
+
+
+def inject_local_dir(snippet: str, local_dir: str) -> str:
+    """Add a ``-v`` mount for local model weights and redirect ``MODEL_ID``.
+
+    Mounts *local_dir* as ``/data`` inside the container and rewrites
+    ``MODEL_ID=/data`` so the inference server loads weights from disk instead
+    of downloading them at runtime. No-op for non-Docker snippets.
+    """
+    if "docker run" not in snippet:
+        return snippet
+    abs_dir = str(Path(local_dir).resolve())
+    snippet = _inject_volume_mount(snippet, abs_dir, CONTAINER_MODEL_PATH)
+    snippet = _replace_model_id(snippet, CONTAINER_MODEL_PATH)
+    return snippet
+
+
+def inject_hf_cache_dir(snippet: str, hf_cache_dir: str) -> str:
+    """Add a ``-v`` mount for a HuggingFace cache directory and set ``HF_HUB_CACHE``.
+
+    Mounts *hf_cache_dir* as ``/root/.cache/huggingface`` and injects
+    ``-e HF_HUB_CACHE=/root/.cache/huggingface`` so the container runtime
+    finds the locally cached model files without downloading them. ``MODEL_ID``
+    is left unchanged. No-op for non-Docker snippets.
+    """
+    if "docker run" not in snippet:
+        return snippet
+    abs_dir = str(Path(hf_cache_dir).resolve())
+    snippet = _inject_volume_mount(snippet, abs_dir, CONTAINER_HF_CACHE_PATH)
+    return re.sub(
+        r"(registry\.dell\.huggingface\.co/\S+)",
+        f"-e HF_HUB_CACHE={CONTAINER_HF_CACHE_PATH} " + r"\1",
+        snippet,
+        count=1,
+    )

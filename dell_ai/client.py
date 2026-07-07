@@ -497,6 +497,8 @@ class DellAIClient:
         num_replicas: int = 1,
         detach: bool = True,
         goodput: Optional[str] = None,
+        local_dir: Optional[str] = None,
+        hf_cache_dir: Optional[str] = None,
     ) -> Dict[str, Any]:
         """
         Deploy a model on the local node.
@@ -510,6 +512,12 @@ class DellAIClient:
             detach: Whether to run in detached (background) mode. Defaults to True.
             goodput: Goodput scenario to optimize for (e.g. "balanced"). Mutually
                      exclusive with num_gpus.
+            local_dir: Path to a local directory containing model weights. Mounts
+                the folder into the container and sets MODEL_ID to the mount path.
+                Mutually exclusive with hf_cache_dir.
+            hf_cache_dir: Path to a HuggingFace cache directory. Mounts the folder
+                as the container's HF cache and sets HF_HUB_CACHE accordingly.
+                Mutually exclusive with local_dir.
 
         Returns:
             A dictionary containing deployment execution details.
@@ -518,6 +526,8 @@ class DellAIClient:
             raise ValueError("num_gpus and goodput are mutually exclusive")
         if goodput is None and num_gpus is None:
             raise ValueError("Either num_gpus or goodput must be provided")
+        if local_dir is not None and hf_cache_dir is not None:
+            raise ValueError("local_dir and hf_cache_dir are mutually exclusive")
 
         from dell_ai import deployments, resources
 
@@ -546,6 +556,12 @@ class DellAIClient:
                 gpu_indices = resources.allocate_gpu_indices(required_gpus)
                 if gpu_indices:
                     snippet = resources.inject_gpu_devices(snippet, gpu_indices)
+
+            # Local weights: mount the folder and update MODEL_ID / HF_HUB_CACHE
+            if local_dir is not None:
+                snippet = resources.inject_local_dir(snippet, local_dir)
+            elif hf_cache_dir is not None:
+                snippet = resources.inject_hf_cache_dir(snippet, hf_cache_dir)
 
         result = self._execute_snippet(snippet, detach=detach)
 

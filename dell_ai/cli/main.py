@@ -653,6 +653,25 @@ def models_get_snippet(
             "Cannot be combined with --gpus."
         ),
     ),
+    local_dir: Optional[str] = typer.Option(
+        None,
+        "--local-dir",
+        help=(
+            "Path to a local directory containing model weights. "
+            "Mounts the folder into the container and sets MODEL_ID to the mount path. "
+            "Only supported with --engine docker. Mutually exclusive with --hf-cache-dir."
+        ),
+    ),
+    hf_cache_dir: Optional[str] = typer.Option(
+        None,
+        "--hf-cache-dir",
+        help=(
+            "Path to a HuggingFace cache directory (same layout as "
+            "'huggingface-cli download --cache-dir'). "
+            "Mounts the folder as the container's HF cache and injects HF_HUB_CACHE. "
+            "Only supported with --engine docker. Mutually exclusive with --local-dir."
+        ),
+    ),
 ) -> None:
     """
     Get a deployment snippet for running a model on a specific platform.
@@ -663,6 +682,9 @@ def models_get_snippet(
     Provide either --gpus for manual sizing or --goodput <scenario> to let the
     server size the deployment for you. Exactly one of the two is required.
 
+    Use --local-dir or --hf-cache-dir to serve weights from a local folder instead
+    of downloading them at container startup (Docker only).
+
     Args:
         model_id: Model ID in the format 'organization/model_name'
         platform_id: Platform SKU ID
@@ -670,10 +692,14 @@ def models_get_snippet(
         gpus: Number of GPUs to use (manual sizing; required unless --goodput)
         replicas: Number of replicas to deploy
         goodput: Goodput scenario to optimize the snippet for
+        local_dir: Local directory with model weights (Docker only)
+        hf_cache_dir: HuggingFace cache directory (Docker only)
 
     Examples:
         dell-ai models get-snippet -m google/gemma-3-27b-it -p xe9680-nvidia-h100 -e docker --gpus 8 --replicas 1
         dell-ai models get-snippet -m google/gemma-3-27b-it -p xe9680-nvidia-h100 --goodput balanced
+        dell-ai models get-snippet -m google/gemma-3-27b-it -p xe9680-nvidia-h100 --gpus 8 --local-dir /data/weights
+        dell-ai models get-snippet -m google/gemma-3-27b-it -p xe9680-nvidia-h100 --gpus 8 --hf-cache-dir ~/.cache/huggingface
     """
     if goodput is not None and gpus is not None:
         print_error("--gpus cannot be combined with --goodput")
@@ -682,7 +708,26 @@ def models_get_snippet(
     if goodput is None and gpus is None:
         print_error("Either --gpus or --goodput must be provided")
 
+    if local_dir is not None and hf_cache_dir is not None:
+        print_error("--local-dir and --hf-cache-dir are mutually exclusive")
+        raise typer.Exit(code=1)
+
+    if local_dir is not None or hf_cache_dir is not None:
+        if engine != "docker":
+            print_error("--local-dir and --hf-cache-dir are only supported with --engine docker")
+            raise typer.Exit(code=1)
+
+    if local_dir is not None and not Path(local_dir).is_dir():
+        print_error(f"--local-dir path does not exist or is not a directory: {local_dir}")
+        raise typer.Exit(code=1)
+
+    if hf_cache_dir is not None and not Path(hf_cache_dir).is_dir():
+        print_error(f"--hf-cache-dir path does not exist or is not a directory: {hf_cache_dir}")
+        raise typer.Exit(code=1)
+
     try:
+        from dell_ai import resources
+
         # Create client and get deployment snippet
         client = get_client()
         snippet = client.get_deployment_snippet(
@@ -693,6 +738,10 @@ def models_get_snippet(
             num_replicas=replicas,
             goodput=goodput,
         )
+        if local_dir is not None:
+            snippet = resources.inject_local_dir(snippet, local_dir)
+        elif hf_cache_dir is not None:
+            snippet = resources.inject_hf_cache_dir(snippet, hf_cache_dir)
         typer.echo(snippet)
     except (ValidationError, ResourceNotFoundError) as e:
         print_error(
@@ -756,6 +805,25 @@ def models_deploy(
         "--detach/--no-detach",
         help="Whether to run the model in background (detached) mode",
     ),
+    local_dir: Optional[str] = typer.Option(
+        None,
+        "--local-dir",
+        help=(
+            "Path to a local directory containing model weights. "
+            "Mounts the folder into the container and sets MODEL_ID to the mount path. "
+            "Only supported with --engine docker. Mutually exclusive with --hf-cache-dir."
+        ),
+    ),
+    hf_cache_dir: Optional[str] = typer.Option(
+        None,
+        "--hf-cache-dir",
+        help=(
+            "Path to a HuggingFace cache directory (same layout as "
+            "'huggingface-cli download --cache-dir'). "
+            "Mounts the folder as the container's HF cache and injects HF_HUB_CACHE. "
+            "Only supported with --engine docker. Mutually exclusive with --local-dir."
+        ),
+    ),
 ) -> None:
     """
     Deploy a model directly on the local node.
@@ -763,15 +831,33 @@ def models_deploy(
     Provide either --gpus for manual GPU sizing or --goodput <scenario> to let
     the server size the deployment for you. Exactly one of the two is required.
 
+    Use --local-dir or --hf-cache-dir to serve weights from a local folder instead
+    of downloading them at container startup (Docker only).
+
     Examples:
         dell-ai models deploy -m google/gemma-3-27b-it -p xe9680-nvidia-h100 --gpus 8
         dell-ai models deploy -m google/gemma-3-27b-it -p xe9680-nvidia-h100 --goodput balanced
+        dell-ai models deploy -m google/gemma-3-27b-it -p xe9680-nvidia-h100 --gpus 8 --local-dir /data/weights
+        dell-ai models deploy -m google/gemma-3-27b-it -p xe9680-nvidia-h100 --gpus 8 --hf-cache-dir ~/.cache/huggingface
     """
     if goodput is not None and gpus is not None:
         print_error("--gpus cannot be combined with --goodput")
         raise typer.Exit(code=1)
     if goodput is None and gpus is None:
         print_error("Either --gpus or --goodput must be provided")
+        raise typer.Exit(code=1)
+    if local_dir is not None and hf_cache_dir is not None:
+        print_error("--local-dir and --hf-cache-dir are mutually exclusive")
+        raise typer.Exit(code=1)
+    if local_dir is not None or hf_cache_dir is not None:
+        if engine != "docker":
+            print_error("--local-dir and --hf-cache-dir are only supported with --engine docker")
+            raise typer.Exit(code=1)
+    if local_dir is not None and not Path(local_dir).is_dir():
+        print_error(f"--local-dir path does not exist or is not a directory: {local_dir}")
+        raise typer.Exit(code=1)
+    if hf_cache_dir is not None and not Path(hf_cache_dir).is_dir():
+        print_error(f"--hf-cache-dir path does not exist or is not a directory: {hf_cache_dir}")
         raise typer.Exit(code=1)
     try:
         client = get_client()
@@ -784,6 +870,8 @@ def models_deploy(
             num_replicas=replicas,
             detach=detach,
             goodput=goodput,
+            local_dir=local_dir,
+            hf_cache_dir=hf_cache_dir,
         )
         if result.get("success"):
             typer.echo("🎉 Deployment initiated successfully!")
