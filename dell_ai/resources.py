@@ -107,7 +107,7 @@ def _nvidia_inject_devices(snippet: str, indices: List[int]) -> str:
     device_str = ",".join(str(i) for i in indices)
     return re.sub(
         r"--gpus\s+(?:'[^']*'|\"[^\"]*\"|\S+)",
-        f'--gpus "device={device_str}"',
+        f"""--gpus '"device={device_str}"'""",
         snippet,
     )
 
