@@ -519,6 +519,10 @@ class DellAIClient:
         if goodput is None and num_gpus is None:
             raise ValueError("Either num_gpus or goodput must be provided")
 
+        from dell_ai import deployments, resources
+
+        deployment_id = deployments.get_unique_deployment_id(model_id)
+
         snippet = self.get_deployment_snippet(
             model_id=model_id,
             platform_id=platform_id,
@@ -527,23 +531,38 @@ class DellAIClient:
             num_replicas=num_replicas,
             goodput=goodput,
         )
+
+        gpu_indices: list = []
+        if engine == "docker":
+            # Port: find a free host port, replace if the snippet's port is taken
+            preferred_port = resources.parse_host_port(snippet)
+            free_port = resources.find_free_port(preferred=preferred_port)
+            if free_port != preferred_port:
+                snippet = resources.inject_host_port(snippet, free_port)
+
+            # GPUs: allocate free indices and pin the container to them
+            required_gpus = num_gpus if num_gpus is not None else resources.parse_gpu_count(snippet)
+            if required_gpus:
+                gpu_indices = resources.allocate_gpu_indices(required_gpus)
+                if gpu_indices:
+                    snippet = resources.inject_gpu_devices(snippet, gpu_indices)
+
         result = self._execute_snippet(snippet, detach=detach)
 
-        # Save env vars if successful
+        # Save to deployments registry if successful
         if result.get("success"):
-            env.set_env_var(
-                "DELL_AI_LAST_DEPLOYED_ENGINE", result.get("engine", "unknown")
-            )
+            deployment_meta = {
+                "endpoint": result.get("endpoint"),
+                "engine": result.get("engine", "unknown"),
+            }
             if "container_id" in result:
-                env.set_env_var(
-                    "DELL_AI_LAST_DEPLOYED_CONTAINER", result["container_id"]
-                )
+                deployment_meta["container_id"] = result["container_id"]
             if "k8s_deployment" in result:
-                env.set_env_var(
-                    "DELL_AI_LAST_DEPLOYED_K8S_DEPLOYMENT", result["k8s_deployment"]
-                )
-            if "endpoint" in result and result["endpoint"]:
-                env.set_env_var("DELL_AI_ENDPOINT", result["endpoint"])
+                deployment_meta["k8s_deployment"] = result["k8s_deployment"]
+            if gpu_indices:
+                deployment_meta["gpus"] = gpu_indices
+
+            deployments.save_deployment(deployment_id, deployment_meta)
 
         return result
 
@@ -564,18 +583,26 @@ class DellAIClient:
         Returns:
             A dictionary containing deployment execution details.
         """
+        from dell_ai import deployments
+
+        deployment_id = deployments.get_unique_deployment_id(app_id)
+
         snippet = self.get_app_snippet(app_id=app_id, config=config)
         result = self._execute_snippet(snippet, detach=detach)
 
-        # Save env vars if successful
+        # Save to deployments registry if successful
         if result.get("success"):
-            env.set_env_var("DELL_AI_LAST_DEPLOYED_ENGINE", "helm")
-            if "endpoint" in result and result["endpoint"]:
-                env.set_env_var("DELL_AI_ENDPOINT", result["endpoint"])
+            deployment_meta = {
+                "endpoint": result.get("endpoint"),
+                "engine": result.get("engine", "helm"),
+            }
+            deployments.save_deployment(deployment_id, deployment_meta)
 
         return result
 
-    def _execute_snippet(self, snippet: str, detach: bool = True) -> Dict[str, Any]:
+    def _execute_snippet(
+        self, snippet: str, detach: bool = True
+    ) -> Dict[str, Any]:
         """
         Helper method to execute a snippet command on the local node.
         """
@@ -635,6 +662,7 @@ class DellAIClient:
                 tokens = [t for t in tokens if t not in ("-it", "-i", "-t")]
                 if "run" in tokens and "-d" not in tokens:
                     tokens.insert(tokens.index("run") + 1, "-d")
+
                 cmd = shlex.join(tokens)
 
             try:

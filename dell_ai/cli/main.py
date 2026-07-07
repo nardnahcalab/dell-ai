@@ -159,29 +159,36 @@ def auth_status() -> None:
 
 
 @app.command("status")
-def status_command() -> None:
+def dellai_status() -> None:
     """
     Check the status of deployed model endpoints, checkpoints, and active deployments.
     """
     typer.echo("🔍 Checking status of Dell AI environment...")
 
-    # Initialize Table for Endpoints
-    endpoint_table = Table(title="Deployed Model Endpoints")
-    endpoint_table.add_column("Environment Variable", style="cyan")
-    endpoint_table.add_column("URL", style="blue")
-    endpoint_table.add_column("Status", style="bold")
-    endpoint_table.add_column("Response Time", style="green")
+    # Initialize Table for Deployed Models/Apps
+    deployments_table = Table(title="Active Deployments")
+    deployments_table.add_column("Deployment ID", style="cyan")
+    deployments_table.add_column("Endpoint", style="blue")
+    deployments_table.add_column("Status", style="bold")
+    deployments_table.add_column("Response Time", style="green")
+    deployments_table.add_column("Engine", style="magenta")
 
-    endpoints_found = False
+    deployments_found = False
 
-    # 1. Scan for endpoints in env vars (scoped to DELL_AI_ to avoid false matches)
-    for k, v in sorted(os.environ.items()):
-        if k.startswith("DELL_AI_") and k.endswith("_ENDPOINT") and v.startswith("http"):
-            endpoints_found = True
+    # 1. Scan deployments registry
+    from dell_ai import deployments as deployments_module
+
+    all_deployments = deployments_module.list_deployments()
+    for deployment_id, deployment_meta in sorted(all_deployments.items()):
+        deployments_found = True
+        endpoint = deployment_meta.get("endpoint", "N/A")
+        engine = deployment_meta.get("engine", "unknown")
+
+        if endpoint and endpoint.startswith("http"):
             start_time = time.time()
             try:
                 # Try getting health or main url
-                url = v.rstrip("/")
+                url = endpoint.rstrip("/")
                 response = None
                 for health_path in ["/health", "/v1/models", ""]:
                     try:
@@ -193,22 +200,38 @@ def status_command() -> None:
 
                 if response is not None and response.status_code == 200:
                     latency = f"{(time.time() - start_time) * 1000:.0f}ms"
-                    endpoint_table.add_row(k, v, "[green]Online[/green]", latency)
+                    deployments_table.add_row(
+                        deployment_id, endpoint, "[green]Online[/green]", latency, engine
+                    )
                 else:
                     status_code = (
                         response.status_code if response is not None else "No Response"
                     )
-                    endpoint_table.add_row(
-                        k, v, f"[red]Offline ({status_code})[/red]", "N/A"
+                    deployments_table.add_row(
+                        deployment_id,
+                        endpoint,
+                        f"[red]Offline ({status_code})[/red]",
+                        "N/A",
+                        engine,
                     )
             except Exception as e:
-                endpoint_table.add_row(k, v, f"[red]Error ({str(e)})[/red]", "N/A")
+                deployments_table.add_row(
+                    deployment_id,
+                    endpoint,
+                    f"[red]Error ({str(e)})[/red]",
+                    "N/A",
+                    engine,
+                )
+        else:
+            deployments_table.add_row(
+                deployment_id, endpoint, "[yellow]No Endpoint[/yellow]", "N/A", engine
+            )
 
-    if endpoints_found:
-        stdout_console.print(endpoint_table)
+    if deployments_found:
+        stdout_console.print(deployments_table)
         typer.echo("")
     else:
-        typer.echo("ℹ️ No active model endpoints found in environment variables.")
+        typer.echo("ℹ️ No active deployments found.")
 
     # 2. Check for checkpoints
     checkpoint_table = Table(title="Model Checkpoints")
@@ -787,6 +810,70 @@ def models_deploy(
         raise
     except Exception as e:
         print_error(f"Failed to deploy model: {str(e)}")
+        raise typer.Exit(code=1)
+
+
+@models_app.command("undeploy")
+def models_undeploy(
+    model_id: str = typer.Option(..., "--model-id", "-m", help="Model ID to undeploy"),
+) -> None:
+    """
+    Stop and remove a deployed model.
+
+    Stops the running Docker container or Kubernetes deployment and removes
+    the deployment entry from the registry.
+    """
+    try:
+        from dell_ai import deployments
+
+        deployment = deployments.get_deployment(model_id)
+        if not deployment:
+            print_error(f"No active deployment found for model: {model_id}")
+            raise typer.Exit(code=1)
+
+        engine = deployment.get("engine")
+        if engine == "docker":
+            import subprocess
+
+            container_id = deployment.get("container_id")
+            if container_id:
+                try:
+                    subprocess.run(
+                        ["docker", "stop", container_id],
+                        capture_output=True,
+                        check=True,
+                    )
+                    typer.echo(f"✓ Stopped Docker container: {container_id}")
+                except subprocess.CalledProcessError as e:
+                    print_warning(f"Failed to stop Docker container: {e.stderr.decode()}")
+            else:
+                print_warning("No container ID found in deployment record")
+
+        elif engine == "kubernetes":
+            import subprocess
+
+            k8s_deployment = deployment.get("k8s_deployment")
+            if k8s_deployment:
+                try:
+                    subprocess.run(
+                        ["kubectl", "delete", "deployment", k8s_deployment],
+                        capture_output=True,
+                        check=True,
+                    )
+                    typer.echo(f"✓ Deleted Kubernetes deployment: {k8s_deployment}")
+                except subprocess.CalledProcessError as e:
+                    print_warning(f"Failed to delete Kubernetes deployment: {e.stderr.decode()}")
+            else:
+                print_warning("No deployment name found in deployment record")
+
+        # Remove from registry
+        deployments.delete_deployment(model_id)
+        typer.echo(f"✓ Removed deployment entry for: {model_id}")
+
+    except typer.Exit:
+        raise
+    except Exception as e:
+        print_error(f"Failed to undeploy model: {str(e)}")
         raise typer.Exit(code=1)
 
 
