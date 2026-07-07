@@ -169,12 +169,15 @@ def list_deployments(is_global: Optional[bool] = None) -> Dict[str, Dict[str, An
         local_deps = load_deployments_file(get_local_deployments_path())
         registry = {**global_deps, **local_deps}
 
-    # Discover running DEH containers and register any new ones
+    # Discover running DEH containers and register any new ones.
+    # Normalize to the 12-char short ID for comparison.
     known_container_ids = {
-        v.get("container_id") for v in registry.values() if v.get("container_id")
+        v.get("container_id", "")[:12]
+        for v in registry.values()
+        if v.get("container_id")
     }
     for slug, meta in _discover_docker_deployments().items():
-        if meta.get("container_id") not in known_container_ids:
+        if meta.get("container_id", "")[:12] not in known_container_ids:
             # Save to local by default when is_global is None or False
             save_deployment(slug, meta, is_global=is_global is True)
             registry[slug] = meta
