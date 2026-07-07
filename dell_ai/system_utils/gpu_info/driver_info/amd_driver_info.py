@@ -7,13 +7,14 @@ from dell_ai.system_utils.base import ComparableBaseModel
 
 class AmdDriverInfo(ComparableBaseModel):
     def compare(self, others: List[Self]):
-        self.more_than_at_least_one(
-            "cuda_version_from_rocm_smi",
+        self.software_version_compare(
+            "rocm_smi_version",
             others,
-            "CUDA version from ROCM SMI",
-            level="error",
+            "ROCM SMI Version",
         )
         self.software_version_compare("driver_version", others, "Driver version")
+        self.software_version_compare("amd_ctk_version", others, "CTK Version")
 
-    cuda_version_from_rocm_smi: str | None = None
+    rocm_smi_version: str | None = None
     driver_version: str | None = None
+    amd_ctk_version: str | None = None
