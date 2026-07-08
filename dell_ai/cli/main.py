@@ -163,7 +163,6 @@ def dellai_status() -> None:
     """
     Check the status of deployed model endpoints, checkpoints, and active deployments.
     """
-    typer.echo("🔍 Checking status of Dell AI environment...")
 
     # Initialize Table for Deployed Models/Apps
     deployments_table = Table(title="Active Deployments")
@@ -228,6 +227,7 @@ def dellai_status() -> None:
             )
 
     if deployments_found:
+        stdout_console.print("\n")
         stdout_console.print(deployments_table)
         typer.echo("")
     else:
@@ -287,9 +287,7 @@ def dellai_status() -> None:
         typer.echo("ℹ️ No active checkpoints found in environment variables.")
 
     # 3. Check for running container/kubernetes deployments
-    typer.echo("🔍 Scanning local node for active Docker/K8s deployments...")
-
-    deployments_table = Table(title="Active Local Deployments")
+    deployments_table = Table(title="Active Docker/K8s")
     deployments_table.add_column("Engine", style="magenta")
     deployments_table.add_column("ID / Name", style="cyan")
     deployments_table.add_column("Image / Reference", style="blue")
@@ -414,7 +412,7 @@ def dellai_status() -> None:
     if deployments_found:
         stdout_console.print(deployments_table)
     else:
-        typer.echo("ℹ️ No active Docker or Kubernetes deployments found.")
+        typer.echo("ℹ️ No active Docker/K8s found.")
 
 
 @models_app.command("list")
