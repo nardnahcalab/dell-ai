@@ -124,10 +124,15 @@ def _discover_docker_deployments() -> Dict[str, Dict[str, Any]]:
         if port_match:
             endpoint = f"http://localhost:{port_match.group(1)}"
 
-        # Deployment ID: strip registry prefix and image tag
+        # Deployment ID based on image + unique identifier.
         slug = image[len(DEH_IMAGE_PREFIX):].split(":")[0]
+        unique_slug = slug
+        counter = 1
+        while unique_slug in discovered:
+            unique_slug = f"{slug}_{counter}"
+            counter += 1
 
-        discovered[slug] = {
+        discovered[unique_slug] = {
             "container_id": container_id,
             "endpoint": endpoint,
             "engine": "docker",

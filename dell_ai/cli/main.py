@@ -159,7 +159,13 @@ def auth_status() -> None:
 
 
 @app.command("status")
-def dellai_status() -> None:
+def dellai_status(
+    clean: bool = typer.Option(
+        False,
+        "--clean",
+        help="Remove exited Docker containers and stopped K8s deployments.",
+    ),
+) -> None:
     """
     Check the status of deployed model endpoints, checkpoints, and active deployments.
     """
@@ -337,7 +343,19 @@ def dellai_status() -> None:
 
                     if is_last_deployed or is_matching_image:
                         deployments_found = True
-                        status_color = "green" if "Up" in c_status else "red"
+                        is_running = "Up" in c_status
+                        if clean and not is_running:
+                            try:
+                                subprocess.run(
+                                    ["docker", "rm", c_id],
+                                    capture_output=True,
+                                    timeout=10,
+                                    check=True,
+                                )
+                                c_status = "Removed"
+                            except Exception:
+                                pass
+                        status_color = "green" if is_running else ("yellow" if c_status == "Removed" else "red")
                         deployments_table.add_row(
                             "Docker",
                             c_name,
@@ -398,6 +416,28 @@ def dellai_status() -> None:
                             if ready > 0
                             else "red"
                         )
+
+                        if clean and ready == 0:
+                            try:
+                                subprocess.run(
+                                    [
+                                        "kubectl",
+                                        "delete",
+                                        "deployment",
+                                        name,
+                                        "-n",
+                                        namespace,
+                                    ],
+                                    capture_output=True,
+                                    timeout=30,
+                                    check=True,
+                                )
+                                deployments_module.delete_deployment(name, is_global=False)
+                                deployments_module.delete_deployment(name, is_global=True)
+                                status_str = "Removed"
+                                status_color = "yellow"
+                            except Exception:
+                                pass
 
                         deployments_table.add_row(
                             "Kubernetes",
