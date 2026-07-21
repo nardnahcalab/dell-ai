@@ -15,6 +15,10 @@ A Python SDK and CLI for interacting with the Dell Enterprise Hub (DEH), allowin
 - Browse available AI models
 - View platform configurations
 - Generate deployment snippets for running AI models on Dell hardware
+- Deploy models and applications directly onto the local node, with automatic host port and GPU management
+- Track, discover, and tear down local deployments through a deployment registry
+- Manage local and global environment variables
+- Check the status of deployed endpoints, checkpoints, and active deployments
 - Simple and easy-to-use API
 - Consistent CLI commands
 
@@ -120,6 +124,179 @@ snippet = client.get_deployment_snippet(
 )
 print(snippet)
 ```
+
+## Deploying models and applications
+
+In addition to generating snippets, `dell-ai` can execute them directly on the
+local node, so the code you get from the Dell Enterprise Hub is deployed for you.
+Deployment uses the locally available engine: `docker` (Docker CLI), `kubernetes`
+(`kubectl apply`), or Helm for applications.
+
+By default deployments run in detached/background mode. For Docker, the
+interactive flags (`-it`) are automatically converted to detached mode (`-d`),
+the container ID is captured, and the inferred endpoint URL is recorded.
+
+For Docker deployments, `dell-ai` also manages host resources automatically: if
+the snippet's host port is already in use it is remapped to a free port, and free
+GPU indices are allocated and pinned to the container.
+
+On a successful deployment the metadata (endpoint, engine, container ID or
+Kubernetes deployment name, and any assigned GPUs) is recorded in the
+**deployment registry** so it can later be inspected with `dell-ai status` and
+torn down with `dell-ai models undeploy`. See
+[Deployment registry](#deployment-registry).
+
+### Using the CLI
+
+```bash
+# Deploy a model with Docker (runs in the background by default)
+dell-ai models deploy --model-id meta-llama/Llama-4-Maverick-17B-128E-Instruct --platform-id xe9680-nvidia-h200 --engine docker --gpus 8 --replicas 1
+
+# Deploy a model with Kubernetes
+dell-ai models deploy -m meta-llama/Llama-4-Maverick-17B-128E-Instruct -p xe9680-nvidia-h200 -e kubernetes -g 8 -r 1
+
+# Run in the foreground instead of detached mode
+dell-ai models deploy -m meta-llama/Llama-4-Maverick-17B-128E-Instruct -p xe9680-nvidia-h200 -e docker --no-detach
+
+# Deploy optimized for a goodput scenario instead of a fixed GPU count (mutually exclusive with --gpus)
+dell-ai models deploy -m meta-llama/Llama-4-Maverick-17B-128E-Instruct -p xe9680-nvidia-h200 -e docker --goodput balanced
+
+# Mount local model weights instead of downloading from the Hub (Docker only)
+dell-ai models deploy -m meta-llama/Llama-4-Maverick-17B-128E-Instruct -p xe9680-nvidia-h200 -e docker --gpus 8 --local-dir /data/my-model
+# Or reuse an existing HuggingFace cache directory (mutually exclusive with --local-dir)
+dell-ai models deploy -m meta-llama/Llama-4-Maverick-17B-128E-Instruct -p xe9680-nvidia-h200 -e docker --gpus 8 --hf-cache-dir ~/.cache/huggingface
+
+# Deploy an application (Helm)
+dell-ai apps deploy openwebui --config '{"config":[{"helmPath":"main.config.storageClassName","type":"string","value":"custom-storage-class"}]}'
+
+# Stop and remove a deployment (Docker container / K8s deployment) and its registry entry.
+# The ID is the "Deployment ID" shown by `dell-ai status` (see note on duplicates below).
+dell-ai models undeploy -d meta-llama/Llama-4-Maverick-17B-128E-Instruct
+```
+
+### Using the SDK
+
+```python
+from dell_ai.client import DellAIClient
+
+client = DellAIClient()
+
+# Deploy a model on the local node
+result = client.deploy_model(
+    model_id="meta-llama/Llama-4-Maverick-17B-128E-Instruct",
+    platform_id="xe9680-nvidia-h200",
+    engine="docker",
+    num_gpus=8,          # or use goodput="balanced" instead of num_gpus
+    num_replicas=1,
+    detach=True,
+    # local_dir="/data/my-model",          # mount local weights (Docker only)
+    # hf_cache_dir="~/.cache/huggingface",  # or reuse an existing HF cache
+)
+print(result["success"], result.get("container_id"), result.get("endpoint"))
+
+# Deploy an application on the local node
+result = client.deploy_app(app_id="openwebui", config=[], detach=True)
+print(result["success"])
+```
+
+> [!NOTE]
+> Deployment executes the snippet returned by the Dell Enterprise Hub on the
+> local machine, so it requires the relevant tooling (`docker`, `kubectl`, or
+> `helm`) to be installed and configured.
+
+## Deployment registry
+
+Successful deployments are recorded in a **deployment registry** so they can be
+listed, inspected, and torn down later. The registry has two scopes:
+
+- **Local** — `.dell-ai-deployments.json` in the current working directory
+- **Global** — `~/.config/dell-ai/deployments.json` (user-wide)
+
+Each entry is keyed by a **deployment ID** and stores the endpoint, engine,
+container ID or Kubernetes deployment name, assigned GPUs, and a timestamp. When
+listing deployments (e.g. via `dell-ai status`), running Dell Enterprise Hub
+Docker containers that are not yet tracked are **auto-discovered** and added, and
+registry entries whose Docker containers are no longer running are pruned
+automatically.
+
+The deployment ID defaults to the model ID. If the **same model is deployed more
+than once**, each additional instance gets a numeric suffix (e.g.
+`meta-llama/Llama-4`, `meta-llama/Llama-4_1`, …) so they can coexist — each
+instance is automatically given its own host port and GPU indices.
+
+Use `dell-ai models undeploy -d <deployment_id>` to stop the underlying container
+or Kubernetes deployment and remove its registry entry. Undeploy acts on **one
+deployment at a time**: with duplicate instances, run `dell-ai status` first to
+see the suffixed IDs, then undeploy each one individually.
+
+## Environment variables
+
+`dell-ai` can store configuration as environment variables in two scopes:
+
+- **Local** — stored in `.dell-ai-env.json` in the current working directory
+- **Global** — stored in `~/.config/dell-ai/env.json` (user-wide)
+
+Variables are loaded automatically into the process environment on CLI startup
+and when a `DellAIClient` is created. When resolving a variable, precedence is:
+the active shell environment, then local, then global. This is useful for
+recording checkpoint paths (`DELL_AI_CHECKPOINT`, which `dell-ai status` reports
+on) and any other settings your deployments rely on.
+
+### Using the CLI
+
+```bash
+# Set a variable locally (current directory) or globally (-g/--global)
+dell-ai env set DELL_AI_ENDPOINT http://localhost:80
+dell-ai env set DELL_AI_ENDPOINT http://localhost:80 --global
+
+# Get a variable's value
+dell-ai env get DELL_AI_ENDPOINT
+
+# List variables (combined by default; --local or --global to scope)
+dell-ai env list
+dell-ai env list --local
+dell-ai env list --global
+
+# Delete a variable (from local, or --global)
+dell-ai env delete DELL_AI_ENDPOINT
+```
+
+### Using the SDK
+
+```python
+from dell_ai import env
+
+# Set / get / delete
+env.set_env_var("DELL_AI_ENDPOINT", "http://localhost:80", is_global=False)
+print(env.get_env_var("DELL_AI_ENDPOINT"))
+env.delete_env_var("DELL_AI_ENDPOINT", is_global=False)
+
+# List (is_global=None -> combined, True -> global only, False -> local only)
+print(env.list_env_vars())
+```
+
+## Checking deployment status
+
+`dell-ai status` inspects your environment and local node and reports on:
+
+- **Active deployments** — reads the [deployment registry](#deployment-registry),
+  probes each recorded endpoint, and reports whether it is online and its
+  response time (running Dell Enterprise Hub containers are auto-discovered)
+- **Checkpoints** — checks whether paths in `DELL_AI_CHECKPOINT` (or any
+  `*_CHECKPOINT` variable) exist, and reports their type and size
+- **Active Docker/K8s** — scans the local Docker daemon and Kubernetes cluster
+  for running Dell Enterprise Hub deployments
+
+```bash
+dell-ai status
+
+# Also remove exited Docker containers and stopped Kubernetes deployments
+dell-ai status --clean
+```
+
+> [!NOTE]
+> Docker and Kubernetes scanning are skipped gracefully if `docker` or `kubectl`
+> are not available on the node.
 
 ## Testing
 

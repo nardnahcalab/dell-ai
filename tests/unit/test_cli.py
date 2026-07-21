@@ -181,7 +181,12 @@ def test_auth_status_error(runner, mock_auth):
 def test_models_list_success(runner, mock_client):
     """Test models list command with successful response."""
     # Setup
-    mock_client.list_models.return_value = ["org1/model1", "org2/model2"]
+    from dell_ai.models import Model
+
+    mock_client.search_models.return_value = [
+        Model(repoName="org1/model1"),
+        Model(repoName="org2/model2"),
+    ]
 
     # Execute
     result = runner.invoke(app, ["models", "list"])
@@ -190,13 +195,13 @@ def test_models_list_success(runner, mock_client):
     assert result.exit_code == 0
     assert '"org1/model1"' in result.output
     assert '"org2/model2"' in result.output
-    mock_client.list_models.assert_called_once()
+    mock_client.search_models.assert_called_once()
 
 
 def test_models_list_error(runner, mock_client):
     """Test models list command with error."""
     # Setup
-    mock_client.list_models.side_effect = Exception("API error")
+    mock_client.search_models.side_effect = Exception("API error")
 
     # Execute
     result = runner.invoke(app, ["models", "list"])
@@ -204,7 +209,7 @@ def test_models_list_error(runner, mock_client):
     # Verify
     assert result.exit_code == 1
     assert "Error: Failed to list models: API error" in result.output
-    mock_client.list_models.assert_called_once()
+    mock_client.search_models.assert_called_once()
 
 
 def test_models_show_success(runner, mock_client):
@@ -588,13 +593,15 @@ def test_utils_check_system(
 
 def test_models_search_success(runner, mock_client):
     """Test models search command with successful response."""
-    mock_client.list_models.return_value = ["google/gemma-3-27b-it"]
+    from dell_ai.models import Model
+
+    mock_client.search_models.return_value = [Model(repoName="google/gemma-3-27b-it")]
 
     result = runner.invoke(app, ["models", "search", "--query", "gemma"])
 
     assert result.exit_code == 0
     assert "google/gemma-3-27b-it" in result.output
-    mock_client.list_models.assert_called_once_with(
+    mock_client.search_models.assert_called_once_with(
         query="gemma",
         multimodal=None,
         min_size=None,
@@ -602,12 +609,11 @@ def test_models_search_success(runner, mock_client):
         license_filter=None,
         platform_id=None,
     )
-    mock_client.search_models.assert_not_called()
 
 
 def test_models_search_with_filters(runner, mock_client):
     """Test models search command with multiple filters."""
-    mock_client.list_models.return_value = []
+    mock_client.search_models.return_value = []
 
     result = runner.invoke(
         app,
@@ -625,7 +631,7 @@ def test_models_search_with_filters(runner, mock_client):
     )
 
     assert result.exit_code == 0
-    mock_client.list_models.assert_called_once_with(
+    mock_client.search_models.assert_called_once_with(
         query=None,
         multimodal=True,
         min_size=10000.0,
@@ -633,7 +639,6 @@ def test_models_search_with_filters(runner, mock_client):
         license_filter="apache",
         platform_id=None,
     )
-    mock_client.search_models.assert_not_called()
 
 
 def test_models_search_detail(runner, mock_client):
@@ -667,7 +672,7 @@ def test_models_search_detail(runner, mock_client):
 
 def test_models_search_error(runner, mock_client):
     """Test models search command with error."""
-    mock_client.list_models.side_effect = Exception("API error")
+    mock_client.search_models.side_effect = Exception("API error")
 
     result = runner.invoke(app, ["models", "search", "--query", "test"])
 
@@ -734,7 +739,12 @@ def test_models_compatible_platforms_error(runner, mock_client):
 
 def test_models_list_table_format(runner, mock_client):
     """Test models list command with table output format."""
-    mock_client.list_models.return_value = ["org1/model1", "org2/model2"]
+    from dell_ai.models import Model
+
+    mock_client.search_models.return_value = [
+        Model(repoName="org1/model1"),
+        Model(repoName="org2/model2"),
+    ]
 
     result = runner.invoke(app, ["models", "list", "--format", "table"])
 
@@ -746,7 +756,9 @@ def test_models_list_table_format(runner, mock_client):
 
 def test_models_list_json_format_default(runner, mock_client):
     """Test models list command defaults to JSON output."""
-    mock_client.list_models.return_value = ["org1/model1"]
+    from dell_ai.models import Model
+
+    mock_client.search_models.return_value = [Model(repoName="org1/model1")]
 
     result = runner.invoke(app, ["models", "list"])
 
@@ -786,7 +798,9 @@ def test_apps_list_table_format(mock_get_client, runner):
 
 def test_models_search_table_format(runner, mock_client):
     """Test models search command with table output format."""
-    mock_client.list_models.return_value = ["google/gemma-3-27b-it"]
+    from dell_ai.models import Model
+
+    mock_client.search_models.return_value = [Model(repoName="google/gemma-3-27b-it")]
 
     result = runner.invoke(
         app, ["models", "search", "--query", "gemma", "--format", "table"]
@@ -795,7 +809,6 @@ def test_models_search_table_format(runner, mock_client):
     assert result.exit_code == 0
     assert "google/gemma-3-27b-it" in result.output
     assert "Available Models" in result.output
-    mock_client.search_models.assert_not_called()
 
 
 def test_models_search_detail_table_format(runner, mock_client):

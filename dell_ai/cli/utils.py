@@ -67,6 +67,23 @@ def print_error(message: str) -> None:
     raise typer.Exit(code=1)
 
 
+def print_warning(message: str) -> None:
+    """
+    Print a warning message to stderr without exiting.
+    Uses Rich formatting for better readability.
+
+    Args:
+        message: Warning message to print
+    """
+    console.print(
+        Panel.fit(
+            f"[bold yellow]Warning:[/bold yellow] {message}",
+            border_style="yellow",
+            title="Dell AI CLI",
+        )
+    )
+
+
 def get_client(token: Optional[str] = None) -> DellAIClient:
     """
     Create and return a DellAIClient instance.
@@ -102,19 +119,25 @@ def confirm_action(message: str, default: bool = False) -> bool:
     return typer.confirm(message, default=default)
 
 
-def print_models_table(models: List[str]) -> None:
+def print_models_table(models: List[Any]) -> None:
     """
-    Print a list of model IDs as a Rich table.
+    Print a list of models as a Rich table.
 
     Args:
-        models: List of model ID strings
+        models: List of Model objects.
     """
     table = Table(title="Available Models")
     table.add_column("#", style="dim", width=4)
     table.add_column("Model ID", style="cyan")
 
-    for i, model_id in enumerate(models, 1):
-        table.add_row(str(i), model_id)
+    for i, model in enumerate(models, 1):
+        is_deprecated = model.status == "deprecated"
+        model_id_cell = (
+            f"{model.repo_name} [dim](deprecated)[/dim]"
+            if is_deprecated
+            else model.repo_name
+        )
+        table.add_row(str(i), model_id_cell)
 
     stdout_console.print(table)
 
@@ -176,9 +199,14 @@ def print_search_results_table(models: List[Any]) -> None:
         platforms = list(
             data.get("configs_deploy", {}).get("config_per_sku", {}).keys()
         )
+        repo_name = data.get("repo_name", "")
+        is_deprecated = data.get("status") == "deprecated"
+        model_id_cell = (
+            f"{repo_name} [dim](deprecated)[/dim]" if is_deprecated else repo_name
+        )
         table.add_row(
             str(i),
-            data.get("repo_name", ""),
+            model_id_cell,
             str(data.get("size", "")),
             "Yes" if data.get("is_multimodal") else "No",
             data.get("license", ""),
