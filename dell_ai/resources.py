@@ -44,7 +44,9 @@ def _nvidia_total() -> int:
     try:
         proc = subprocess.run(
             ["nvidia-smi", "--query-gpu=index", "--format=csv,noheader"],
-            capture_output=True, text=True, timeout=5,
+            capture_output=True,
+            text=True,
+            timeout=5,
         )
         if proc.returncode != 0:
             return 0
@@ -57,7 +59,9 @@ def _nvidia_free_indices() -> List[int]:
     try:
         all_proc = subprocess.run(
             ["nvidia-smi", "--query-gpu=index", "--format=csv,noheader"],
-            capture_output=True, text=True, timeout=5,
+            capture_output=True,
+            text=True,
+            timeout=5,
         )
         if all_proc.returncode != 0:
             return []
@@ -69,7 +73,9 @@ def _nvidia_free_indices() -> List[int]:
 
         apps_proc = subprocess.run(
             ["nvidia-smi", "--query-compute-apps=gpu_index", "--format=csv,noheader"],
-            capture_output=True, text=True, timeout=5,
+            capture_output=True,
+            text=True,
+            timeout=5,
         )
         busy: set = set()
         if apps_proc.returncode == 0:
@@ -121,12 +127,16 @@ def _amd_total() -> int:
     try:
         proc = subprocess.run(
             ["rocm-smi", "--showid"],
-            capture_output=True, text=True, timeout=5,
+            capture_output=True,
+            text=True,
+            timeout=5,
         )
         if proc.returncode != 0:
             return 0
         # Lines like "GPU[0]  : GPU ID: 0x73bf"
-        return sum(1 for line in proc.stdout.splitlines() if re.match(r"\s*GPU\[", line))
+        return sum(
+            1 for line in proc.stdout.splitlines() if re.match(r"\s*GPU\[", line)
+        )
     except Exception:
         return 0
 
@@ -139,7 +149,9 @@ def _amd_free_indices() -> List[int]:
     try:
         proc = subprocess.run(
             ["rocm-smi", "--showpids"],
-            capture_output=True, text=True, timeout=5,
+            capture_output=True,
+            text=True,
+            timeout=5,
         )
         if proc.returncode != 0:
             return all_indices

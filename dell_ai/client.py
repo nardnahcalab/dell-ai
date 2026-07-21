@@ -551,7 +551,9 @@ class DellAIClient:
                 snippet = resources.inject_host_port(snippet, free_port)
 
             # GPUs: allocate free indices and pin the container to them
-            required_gpus = num_gpus if num_gpus is not None else resources.parse_gpu_count(snippet)
+            required_gpus = (
+                num_gpus if num_gpus is not None else resources.parse_gpu_count(snippet)
+            )
             if required_gpus:
                 gpu_indices = resources.allocate_gpu_indices(required_gpus)
                 if gpu_indices:
@@ -616,9 +618,7 @@ class DellAIClient:
 
         return result
 
-    def _execute_snippet(
-        self, snippet: str, detach: bool = True
-    ) -> Dict[str, Any]:
+    def _execute_snippet(self, snippet: str, detach: bool = True) -> Dict[str, Any]:
         """
         Helper method to execute a snippet command on the local node.
         """

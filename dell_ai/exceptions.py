@@ -125,7 +125,9 @@ class ValidationError(DellAIError):
         # Add parameter and valid values to the message if provided.
         # Skip when config_details is present — it already lists valid configurations.
         full_message = message
-        has_config_details = bool(config_details and config_details.get("valid_configs"))
+        has_config_details = bool(
+            config_details and config_details.get("valid_configs")
+        )
         if parameter and valid_values and not has_config_details:
             full_message = f"{message} Valid values for '{parameter}': {', '.join(str(v) for v in valid_values)}"
         elif parameter and not has_config_details:

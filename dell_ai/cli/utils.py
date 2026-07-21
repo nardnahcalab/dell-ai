@@ -116,7 +116,9 @@ def print_models_table(models: List[Any]) -> None:
     for i, model in enumerate(models, 1):
         is_deprecated = model.status == "deprecated"
         model_id_cell = (
-            f"{model.repo_name} [dim](deprecated)[/dim]" if is_deprecated else model.repo_name
+            f"{model.repo_name} [dim](deprecated)[/dim]"
+            if is_deprecated
+            else model.repo_name
         )
         table.add_row(str(i), model_id_cell)
 

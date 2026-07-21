@@ -206,7 +206,11 @@ def dellai_status(
                 if response is not None and response.status_code == 200:
                     latency = f"{(time.time() - start_time) * 1000:.0f}ms"
                     deployments_table.add_row(
-                        deployment_id, endpoint, "[green]Online[/green]", latency, engine
+                        deployment_id,
+                        endpoint,
+                        "[green]Online[/green]",
+                        latency,
+                        engine,
                     )
                 else:
                     status_code = (
@@ -355,7 +359,11 @@ def dellai_status(
                                 c_status = "Removed"
                             except Exception:
                                 pass
-                        status_color = "green" if is_running else ("yellow" if c_status == "Removed" else "red")
+                        status_color = (
+                            "green"
+                            if is_running
+                            else ("yellow" if c_status == "Removed" else "red")
+                        )
                         deployments_table.add_row(
                             "Docker",
                             c_name,
@@ -432,8 +440,12 @@ def dellai_status(
                                     timeout=30,
                                     check=True,
                                 )
-                                deployments_module.delete_deployment(name, is_global=False)
-                                deployments_module.delete_deployment(name, is_global=True)
+                                deployments_module.delete_deployment(
+                                    name, is_global=False
+                                )
+                                deployments_module.delete_deployment(
+                                    name, is_global=True
+                                )
                                 status_str = "Removed"
                                 status_color = "yellow"
                             except Exception:
@@ -477,7 +489,9 @@ def models_list(
             print_models_table(results)
         else:
             model_ids = [
-                f"{m.repo_name} (deprecated)" if m.status == "deprecated" else m.repo_name
+                f"{m.repo_name} (deprecated)"
+                if m.status == "deprecated"
+                else m.repo_name
                 for m in results
             ]
             print_json(model_ids)
@@ -581,7 +595,9 @@ def models_search(
                 print_models_table(results)
             else:
                 model_ids = [
-                    f"{m.repo_name} (deprecated)" if m.status == "deprecated" else m.repo_name
+                    f"{m.repo_name} (deprecated)"
+                    if m.status == "deprecated"
+                    else m.repo_name
                     for m in results
                 ]
                 print_json(model_ids)
@@ -752,15 +768,21 @@ def models_get_snippet(
 
     if local_dir is not None or hf_cache_dir is not None:
         if engine != "docker":
-            print_error("--local-dir and --hf-cache-dir are only supported with --engine docker")
+            print_error(
+                "--local-dir and --hf-cache-dir are only supported with --engine docker"
+            )
             raise typer.Exit(code=1)
 
     if local_dir is not None and not Path(local_dir).is_dir():
-        print_error(f"--local-dir path does not exist or is not a directory: {local_dir}")
+        print_error(
+            f"--local-dir path does not exist or is not a directory: {local_dir}"
+        )
         raise typer.Exit(code=1)
 
     if hf_cache_dir is not None and not Path(hf_cache_dir).is_dir():
-        print_error(f"--hf-cache-dir path does not exist or is not a directory: {hf_cache_dir}")
+        print_error(
+            f"--hf-cache-dir path does not exist or is not a directory: {hf_cache_dir}"
+        )
         raise typer.Exit(code=1)
 
     try:
@@ -889,13 +911,19 @@ def models_deploy(
         raise typer.Exit(code=1)
     if local_dir is not None or hf_cache_dir is not None:
         if engine != "docker":
-            print_error("--local-dir and --hf-cache-dir are only supported with --engine docker")
+            print_error(
+                "--local-dir and --hf-cache-dir are only supported with --engine docker"
+            )
             raise typer.Exit(code=1)
     if local_dir is not None and not Path(local_dir).is_dir():
-        print_error(f"--local-dir path does not exist or is not a directory: {local_dir}")
+        print_error(
+            f"--local-dir path does not exist or is not a directory: {local_dir}"
+        )
         raise typer.Exit(code=1)
     if hf_cache_dir is not None and not Path(hf_cache_dir).is_dir():
-        print_error(f"--hf-cache-dir path does not exist or is not a directory: {hf_cache_dir}")
+        print_error(
+            f"--hf-cache-dir path does not exist or is not a directory: {hf_cache_dir}"
+        )
         raise typer.Exit(code=1)
     try:
         client = get_client()
@@ -971,7 +999,9 @@ def models_undeploy(
                     )
                     typer.echo(f"✓ Stopped Docker container: {container_id}")
                 except subprocess.CalledProcessError as e:
-                    print_warning(f"Failed to stop Docker container: {e.stderr.decode()}")
+                    print_warning(
+                        f"Failed to stop Docker container: {e.stderr.decode()}"
+                    )
             else:
                 print_warning("No container ID found in deployment record")
 
@@ -988,7 +1018,9 @@ def models_undeploy(
                     )
                     typer.echo(f"✓ Deleted Kubernetes deployment: {k8s_deployment}")
                 except subprocess.CalledProcessError as e:
-                    print_warning(f"Failed to delete Kubernetes deployment: {e.stderr.decode()}")
+                    print_warning(
+                        f"Failed to delete Kubernetes deployment: {e.stderr.decode()}"
+                    )
             else:
                 print_warning("No deployment name found in deployment record")
 
