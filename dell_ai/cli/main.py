@@ -30,6 +30,7 @@ from dell_ai.cli.utils import (
     print_search_results_table,
     print_skills_table,
     print_slos_table,
+    print_warning,
     stdout_console,
 )
 from dell_ai.exceptions import (
@@ -969,20 +970,33 @@ def models_deploy(
 
 @models_app.command("undeploy")
 def models_undeploy(
-    model_id: str = typer.Option(..., "--model-id", "-m", help="Model ID to undeploy"),
+    deployment_id: str = typer.Option(
+        ...,
+        "--deployment-id",
+        "-d",
+        help=(
+            "Deployment ID to undeploy, as shown in the 'Deployment ID' column "
+            "of 'dell-ai status'. For a model deployed once this is the model ID; "
+            "additional instances of the same model are suffixed (e.g. 'org/model_1')."
+        ),
+    ),
 ) -> None:
     """
     Stop and remove a deployed model.
 
     Stops the running Docker container or Kubernetes deployment and removes
     the deployment entry from the registry.
+
+    Each deployment is torn down individually. If the same model is deployed
+    more than once, run 'dell-ai status' to see the suffixed deployment IDs and
+    undeploy each one separately.
     """
     try:
         from dell_ai import deployments
 
-        deployment = deployments.get_deployment(model_id)
+        deployment = deployments.get_deployment(deployment_id)
         if not deployment:
-            print_error(f"No active deployment found for model: {model_id}")
+            print_error(f"No active deployment found: {deployment_id}")
             raise typer.Exit(code=1)
 
         engine = deployment.get("engine")
@@ -1025,8 +1039,8 @@ def models_undeploy(
                 print_warning("No deployment name found in deployment record")
 
         # Remove from registry
-        deployments.delete_deployment(model_id)
-        typer.echo(f"✓ Removed deployment entry for: {model_id}")
+        deployments.delete_deployment(deployment_id)
+        typer.echo(f"✓ Removed deployment entry for: {deployment_id}")
 
     except typer.Exit:
         raise

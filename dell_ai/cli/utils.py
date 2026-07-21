@@ -67,6 +67,23 @@ def print_error(message: str) -> None:
     raise typer.Exit(code=1)
 
 
+def print_warning(message: str) -> None:
+    """
+    Print a warning message to stderr without exiting.
+    Uses Rich formatting for better readability.
+
+    Args:
+        message: Warning message to print
+    """
+    console.print(
+        Panel.fit(
+            f"[bold yellow]Warning:[/bold yellow] {message}",
+            border_style="yellow",
+            title="Dell AI CLI",
+        )
+    )
+
+
 def get_client(token: Optional[str] = None) -> DellAIClient:
     """
     Create and return a DellAIClient instance.

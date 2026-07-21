@@ -169,8 +169,9 @@ dell-ai models deploy -m meta-llama/Llama-4-Maverick-17B-128E-Instruct -p xe9680
 # Deploy an application (Helm)
 dell-ai apps deploy openwebui --config '{"config":[{"helmPath":"main.config.storageClassName","type":"string","value":"custom-storage-class"}]}'
 
-# Stop and remove a deployment (Docker container / K8s deployment) and its registry entry
-dell-ai models undeploy -m meta-llama/Llama-4-Maverick-17B-128E-Instruct
+# Stop and remove a deployment (Docker container / K8s deployment) and its registry entry.
+# The ID is the "Deployment ID" shown by `dell-ai status` (see note on duplicates below).
+dell-ai models undeploy -d meta-llama/Llama-4-Maverick-17B-128E-Instruct
 ```
 
 ### Using the SDK
@@ -211,14 +212,22 @@ listed, inspected, and torn down later. The registry has two scopes:
 - **Local** — `.dell-ai-deployments.json` in the current working directory
 - **Global** — `~/.config/dell-ai/deployments.json` (user-wide)
 
-Each entry stores the endpoint, engine, container ID or Kubernetes deployment
-name, assigned GPUs, and a timestamp. When listing deployments (e.g. via
-`dell-ai status`), running Dell Enterprise Hub Docker containers that are not yet
-tracked are **auto-discovered** and added, and registry entries whose Docker
-containers are no longer running are pruned automatically.
+Each entry is keyed by a **deployment ID** and stores the endpoint, engine,
+container ID or Kubernetes deployment name, assigned GPUs, and a timestamp. When
+listing deployments (e.g. via `dell-ai status`), running Dell Enterprise Hub
+Docker containers that are not yet tracked are **auto-discovered** and added, and
+registry entries whose Docker containers are no longer running are pruned
+automatically.
 
-Use `dell-ai models undeploy -m <model_id>` to stop the underlying container or
-Kubernetes deployment and remove its registry entry.
+The deployment ID defaults to the model ID. If the **same model is deployed more
+than once**, each additional instance gets a numeric suffix (e.g.
+`meta-llama/Llama-4`, `meta-llama/Llama-4_1`, …) so they can coexist — each
+instance is automatically given its own host port and GPU indices.
+
+Use `dell-ai models undeploy -d <deployment_id>` to stop the underlying container
+or Kubernetes deployment and remove its registry entry. Undeploy acts on **one
+deployment at a time**: with duplicate instances, run `dell-ai status` first to
+see the suffixed IDs, then undeploy each one individually.
 
 ## Environment variables
 
