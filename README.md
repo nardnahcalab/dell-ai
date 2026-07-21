@@ -15,7 +15,8 @@ A Python SDK and CLI for interacting with the Dell Enterprise Hub (DEH), allowin
 - Browse available AI models
 - View platform configurations
 - Generate deployment snippets for running AI models on Dell hardware
-- Deploy models and applications directly onto the local node
+- Deploy models and applications directly onto the local node, with automatic host port and GPU management
+- Track, discover, and tear down local deployments through a deployment registry
 - Manage local and global environment variables
 - Check the status of deployed endpoints, checkpoints, and active deployments
 - Simple and easy-to-use API
@@ -135,14 +136,15 @@ By default deployments run in detached/background mode. For Docker, the
 interactive flags (`-it`) are automatically converted to detached mode (`-d`),
 the container ID is captured, and the inferred endpoint URL is recorded.
 
-On a successful deployment the following environment variables are saved to the
-**local** scope (see [Environment variables](#environment-variables)) so they can
-later be inspected with `dell-ai status`:
+For Docker deployments, `dell-ai` also manages host resources automatically: if
+the snippet's host port is already in use it is remapped to a free port, and free
+GPU indices are allocated and pinned to the container.
 
-- `DELL_AI_ENDPOINT` — the inferred endpoint URL (e.g. `http://localhost:80`)
-- `DELL_AI_LAST_DEPLOYED_ENGINE` — `docker`, `kubernetes`, or `helm`
-- `DELL_AI_LAST_DEPLOYED_CONTAINER` — Docker container ID (Docker only)
-- `DELL_AI_LAST_DEPLOYED_K8S_DEPLOYMENT` — deployment name (Kubernetes only)
+On a successful deployment the metadata (endpoint, engine, container ID or
+Kubernetes deployment name, and any assigned GPUs) is recorded in the
+**deployment registry** so it can later be inspected with `dell-ai status` and
+torn down with `dell-ai models undeploy`. See
+[Deployment registry](#deployment-registry).
 
 ### Using the CLI
 
@@ -156,8 +158,19 @@ dell-ai models deploy -m meta-llama/Llama-4-Maverick-17B-128E-Instruct -p xe9680
 # Run in the foreground instead of detached mode
 dell-ai models deploy -m meta-llama/Llama-4-Maverick-17B-128E-Instruct -p xe9680-nvidia-h200 -e docker --no-detach
 
+# Deploy optimized for a goodput scenario instead of a fixed GPU count (mutually exclusive with --gpus)
+dell-ai models deploy -m meta-llama/Llama-4-Maverick-17B-128E-Instruct -p xe9680-nvidia-h200 -e docker --goodput balanced
+
+# Mount local model weights instead of downloading from the Hub (Docker only)
+dell-ai models deploy -m meta-llama/Llama-4-Maverick-17B-128E-Instruct -p xe9680-nvidia-h200 -e docker --gpus 8 --local-dir /data/my-model
+# Or reuse an existing HuggingFace cache directory (mutually exclusive with --local-dir)
+dell-ai models deploy -m meta-llama/Llama-4-Maverick-17B-128E-Instruct -p xe9680-nvidia-h200 -e docker --gpus 8 --hf-cache-dir ~/.cache/huggingface
+
 # Deploy an application (Helm)
 dell-ai apps deploy openwebui --config '{"config":[{"helmPath":"main.config.storageClassName","type":"string","value":"custom-storage-class"}]}'
+
+# Stop and remove a deployment (Docker container / K8s deployment) and its registry entry
+dell-ai models undeploy -m meta-llama/Llama-4-Maverick-17B-128E-Instruct
 ```
 
 ### Using the SDK
@@ -172,9 +185,11 @@ result = client.deploy_model(
     model_id="meta-llama/Llama-4-Maverick-17B-128E-Instruct",
     platform_id="xe9680-nvidia-h200",
     engine="docker",
-    num_gpus=8,
+    num_gpus=8,          # or use goodput="balanced" instead of num_gpus
     num_replicas=1,
     detach=True,
+    # local_dir="/data/my-model",          # mount local weights (Docker only)
+    # hf_cache_dir="~/.cache/huggingface",  # or reuse an existing HF cache
 )
 print(result["success"], result.get("container_id"), result.get("endpoint"))
 
@@ -188,6 +203,23 @@ print(result["success"])
 > local machine, so it requires the relevant tooling (`docker`, `kubectl`, or
 > `helm`) to be installed and configured.
 
+## Deployment registry
+
+Successful deployments are recorded in a **deployment registry** so they can be
+listed, inspected, and torn down later. The registry has two scopes:
+
+- **Local** — `.dell-ai-deployments.json` in the current working directory
+- **Global** — `~/.config/dell-ai/deployments.json` (user-wide)
+
+Each entry stores the endpoint, engine, container ID or Kubernetes deployment
+name, assigned GPUs, and a timestamp. When listing deployments (e.g. via
+`dell-ai status`), running Dell Enterprise Hub Docker containers that are not yet
+tracked are **auto-discovered** and added, and registry entries whose Docker
+containers are no longer running are pruned automatically.
+
+Use `dell-ai models undeploy -m <model_id>` to stop the underlying container or
+Kubernetes deployment and remove its registry entry.
+
 ## Environment variables
 
 `dell-ai` can store configuration as environment variables in two scopes:
@@ -198,8 +230,8 @@ print(result["success"])
 Variables are loaded automatically into the process environment on CLI startup
 and when a `DellAIClient` is created. When resolving a variable, precedence is:
 the active shell environment, then local, then global. This is useful for
-recording endpoints (`DELL_AI_ENDPOINT`), checkpoint paths (`DELL_AI_CHECKPOINT`),
-and other settings that `dell-ai status` can later report on.
+recording checkpoint paths (`DELL_AI_CHECKPOINT`, which `dell-ai status` reports
+on) and any other settings your deployments rely on.
 
 ### Using the CLI
 
@@ -238,15 +270,19 @@ print(env.list_env_vars())
 
 `dell-ai status` inspects your environment and local node and reports on:
 
-- **Model endpoints** — probes URLs stored in `DELL_AI_ENDPOINT` (or any
-  `*_ENDPOINT` variable) and reports whether they are online and their response time
+- **Active deployments** — reads the [deployment registry](#deployment-registry),
+  probes each recorded endpoint, and reports whether it is online and its
+  response time (running Dell Enterprise Hub containers are auto-discovered)
 - **Checkpoints** — checks whether paths in `DELL_AI_CHECKPOINT` (or any
   `*_CHECKPOINT` variable) exist, and reports their type and size
-- **Active deployments** — scans the local Docker daemon and Kubernetes cluster
+- **Active Docker/K8s** — scans the local Docker daemon and Kubernetes cluster
   for running Dell Enterprise Hub deployments
 
 ```bash
 dell-ai status
+
+# Also remove exited Docker containers and stopped Kubernetes deployments
+dell-ai status --clean
 ```
 
 > [!NOTE]
