@@ -176,3 +176,5 @@ cython_debug/
 # dev
 .DS_Store
 project-background-files/
+# dell-ai runtime deployment registry (per-cwd state)
+.dell-ai-deployments.json

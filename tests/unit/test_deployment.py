@@ -8,7 +8,7 @@ from unittest.mock import MagicMock, patch
 import pytest
 from typer.testing import CliRunner
 
-from dell_ai import DellAIClient, env
+from dell_ai import DellAIClient, deployments, env
 from dell_ai.cli.main import app
 
 runner = CliRunner()
@@ -35,6 +35,28 @@ def temp_env_files(tmp_path, monkeypatch):
 
     monkeypatch.setattr(env, "get_local_env_path", lambda: local_file)
     monkeypatch.setattr(env, "get_global_env_path", lambda: global_file)
+
+    # Redirect the deployments registry to temp files so tests never write into
+    # the real working directory (.dell-ai-deployments.json) or the user's home.
+    local_registry = tmp_path / "deployments-local.json"
+    global_registry = tmp_path / "deployments-global.json"
+    monkeypatch.setattr(
+        deployments, "get_local_deployments_path", lambda: local_registry
+    )
+    monkeypatch.setattr(
+        deployments, "get_global_deployments_path", lambda: global_registry
+    )
+
+    # Keep deployment behaviour deterministic and host-independent:
+    #  - no live Docker discovery polluting the registry
+    #  - free-port resolution returns the snippet's preferred port
+    #  - GPU allocation is a no-op (no host GPU probing / snippet injection)
+    monkeypatch.setattr(deployments, "_discover_docker_deployments", lambda: {})
+    monkeypatch.setattr(
+        "dell_ai.resources.find_free_port",
+        lambda preferred=None: preferred if preferred else 8080,
+    )
+    monkeypatch.setattr("dell_ai.resources.allocate_gpu_indices", lambda n: [])
 
     # Mock validate_token to always succeed for testing
     monkeypatch.setattr("dell_ai.auth.validate_token", lambda token: True)
@@ -72,13 +94,12 @@ def test_deploy_model_docker(mock_subprocess_run, temp_env_files):
         assert result["container_id"] == "mock-container-id-abc123xyz"
         assert result["endpoint"] == "http://localhost:80"
 
-        # Check that environment variables are saved
-        assert env.get_env_var("DELL_AI_LAST_DEPLOYED_ENGINE") == "docker"
-        assert (
-            env.get_env_var("DELL_AI_LAST_DEPLOYED_CONTAINER")
-            == "mock-container-id-abc123xyz"
-        )
-        assert env.get_env_var("DELL_AI_ENDPOINT") == "http://localhost:80"
+        # Metadata is persisted to the deployments registry (not env vars)
+        deployment = deployments.get_deployment("meta-llama/Llama-4", is_global=False)
+        assert deployment is not None
+        assert deployment["engine"] == "docker"
+        assert deployment["container_id"] == "mock-container-id-abc123xyz"
+        assert deployment["endpoint"] == "http://localhost:80"
 
         # Verify subprocess was called with detached command
         mock_subprocess_run.assert_called_once()
@@ -107,9 +128,11 @@ def test_deploy_model_kubernetes(mock_subprocess_run, temp_env_files):
         assert result["success"] is True
         assert result["k8s_deployment"] == "my-tgi"
 
-        # Check that environment variables are saved
-        assert env.get_env_var("DELL_AI_LAST_DEPLOYED_ENGINE") == "kubernetes"
-        assert env.get_env_var("DELL_AI_LAST_DEPLOYED_K8S_DEPLOYMENT") == "my-tgi"
+        # Metadata is persisted to the deployments registry (not env vars)
+        deployment = deployments.get_deployment("meta-llama/Llama-4", is_global=False)
+        assert deployment is not None
+        assert deployment["engine"] == "kubernetes"
+        assert deployment["k8s_deployment"] == "my-tgi"
 
 
 def test_deploy_app(mock_subprocess_run, temp_env_files):
@@ -126,7 +149,11 @@ def test_deploy_app(mock_subprocess_run, temp_env_files):
         )
 
         assert result["success"] is True
-        assert env.get_env_var("DELL_AI_LAST_DEPLOYED_ENGINE") == "helm"
+
+        # Metadata is persisted to the deployments registry (not env vars)
+        deployment = deployments.get_deployment("openwebui", is_global=False)
+        assert deployment is not None
+        assert deployment["engine"] == "helm"
 
 
 # Realistic DEH multi-line snippet (note the image name contains "-d")
@@ -168,8 +195,7 @@ def test_deploy_model_docker_realistic_snippet(mock_subprocess_run, temp_env_fil
 
 
 def test_deploy_model_persists_to_local_file(mock_subprocess_run, temp_env_files):
-    """Deployment metadata must be written to the on-disk local env file."""
-    local_file, _ = temp_env_files
+    """Deployment metadata must be written to the on-disk deployments registry."""
     client = DellAIClient(token="mock_token")
 
     with patch.object(
@@ -185,12 +211,15 @@ def test_deploy_model_persists_to_local_file(mock_subprocess_run, temp_env_files
         )
 
     # Verify the values were actually persisted to disk, not just os.environ
-    assert local_file.exists()
-    with open(local_file, "r") as f:
+    registry_path = deployments.get_local_deployments_path()
+    assert registry_path.exists()
+    with open(registry_path, "r") as f:
         data = json.load(f)
-    assert data["DELL_AI_ENDPOINT"] == "http://localhost:80"
-    assert data["DELL_AI_LAST_DEPLOYED_CONTAINER"] == "mock-container-id-abc123xyz"
-    assert data["DELL_AI_LAST_DEPLOYED_ENGINE"] == "docker"
+    assert "meta-llama/Llama-4" in data
+    entry = data["meta-llama/Llama-4"]
+    assert entry["endpoint"] == "http://localhost:80"
+    assert entry["container_id"] == "mock-container-id-abc123xyz"
+    assert entry["engine"] == "docker"
 
 
 def test_deploy_model_no_detach(temp_env_files):
@@ -242,8 +271,8 @@ def test_deploy_model_failure(temp_env_files):
 
         assert result["success"] is False
         assert "docker not found" in result["error"]
-        # No deployment metadata should be saved on failure
-        assert env.get_env_var("DELL_AI_LAST_DEPLOYED_CONTAINER") is None
+        # No deployment metadata should be saved to the registry on failure
+        assert deployments.get_deployment("meta-llama/Llama-4", is_global=False) is None
 
 
 # CLI Deployment tests
@@ -311,7 +340,9 @@ def test_cli_apps_deploy(mock_get_client, mock_subprocess_run, temp_env_files):
 
 @patch("requests.get")
 @patch("shutil.which")
-def test_cli_status(mock_which, mock_get, mock_subprocess_run, temp_env_files):
+def test_cli_status(
+    mock_which, mock_get, mock_subprocess_run, temp_env_files, monkeypatch
+):
     """Test 'dell-ai status' CLI command."""
     # Mock requests.get to return 200 for health check
     mock_response = MagicMock()
@@ -321,16 +352,25 @@ def test_cli_status(mock_which, mock_get, mock_subprocess_run, temp_env_files):
     # Mock docker and kubectl binaries as available
     mock_which.side_effect = lambda cmd: f"/usr/bin/{cmd}"
 
-    # Set up mock environment variables
-    env.set_env_var("DELL_AI_ENDPOINT", "http://localhost:80")
-    env.set_env_var("DELL_AI_CHECKPOINT", "/tmp/mock_checkpoint")
-    env.set_env_var("DELL_AI_LAST_DEPLOYED_CONTAINER", "c-123")
+    # Section 1 ("Active Deployments") is driven by the deployments registry.
+    monkeypatch.setattr(
+        deployments,
+        "list_deployments",
+        lambda *a, **k: {
+            "meta-llama/Llama-4": {
+                "endpoint": "http://localhost:80",
+                "engine": "docker",
+                "container_id": "c-123",
+            }
+        },
+    )
 
-    # Create the mock checkpoint directory
+    # Section 2 ("Model Checkpoints") reads DELL_AI_*_CHECKPOINT from os.environ.
+    env.set_env_var("DELL_AI_CHECKPOINT", "/tmp/mock_checkpoint")
     checkpoint_path = Path("/tmp/mock_checkpoint")
     checkpoint_path.mkdir(parents=True, exist_ok=True)
 
-    # Mock docker ps stdout
+    # Section 3 ("Active Docker/K8s") parses `docker ps -a` tab-delimited output.
     mock_subprocess_run.return_value.stdout = (
         "c-123\tmy-container\tenterprise-dell-image\tUp 5 minutes\t0.0.0.0:80->80/tcp"
     )
@@ -344,8 +384,8 @@ def test_cli_status(mock_which, mock_get, mock_subprocess_run, temp_env_files):
         pass
 
     assert result.exit_code == 0
-    assert "Deployed Model Endpoints" in result.stdout
+    assert "Active Deployments" in result.stdout
     assert "Online" in result.stdout
     assert "Model Checkpoints" in result.stdout
-    assert "Active Local Deployments" in result.stdout
+    assert "Active Docker/K8s" in result.stdout
     assert "my-container" in result.stdout
