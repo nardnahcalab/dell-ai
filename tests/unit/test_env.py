@@ -175,4 +175,4 @@ def test_cli_env_list_and_delete(mock_get_client, temp_env_files):
     # Delete non-existent
     result = runner.invoke(app, ["env", "delete", "NON_EXISTENT"])
     assert result.exit_code == 1
-    assert "Error" in result.stdout
+    assert "Error" in result.output
