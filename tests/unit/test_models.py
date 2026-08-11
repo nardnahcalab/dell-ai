@@ -7,10 +7,12 @@ import pytest
 from dell_ai import constants
 from dell_ai.exceptions import ResourceNotFoundError, ValidationError
 from dell_ai.models import (
+    ContainerTag,
     Model,
     ModelConfig,
     PlatformCompatibility,
     get_compatible_platforms,
+    get_container_tags,
     get_model,
     list_models,
     search_models,
@@ -399,3 +401,41 @@ def test_get_compatible_platforms_invalid_model_id(mock_client):
     """Test compatible platforms with an invalid model ID format."""
     with pytest.raises(ValidationError):
         get_compatible_platforms(mock_client, "invalid-model-id")
+
+
+_MOCK_PLATFORM = {
+    "id": "xe9680-nvidia-h100",
+    "name": "XE9680 Nvidia H100",
+    "disabled": False,
+    "platformType": "server",
+    "platform": "xe9680",
+    "vendor": "Nvidia",
+    "acceleratorType": "GPU",
+    "accelerator": "h100",
+    "productName": "NVIDIA-H100-80GB-HBM3",
+}
+
+
+def test_get_container_tags_resolves_platform_vendor(mock_client):
+    """Tags are resolved via the platform's (case-insensitive) vendor."""
+    # First request returns the model (and caches it); second returns the platform.
+    mock_client._make_request.side_effect = [MOCK_MODEL_DETAILS, _MOCK_PLATFORM]
+
+    tags = get_container_tags(
+        mock_client, "google/gemma-3-27b-it", "xe9680-nvidia-h100"
+    )
+
+    assert all(isinstance(t, ContainerTag) for t in tags)
+    assert [t.id for t in tags] == ["latest"]
+
+
+def test_get_container_tags_unknown_vendor_returns_empty(mock_client):
+    """A vendor with no published tags yields an empty list, not an error."""
+    intel_platform = {**_MOCK_PLATFORM, "vendor": "Intel"}
+    mock_client._make_request.side_effect = [MOCK_MODEL_DETAILS, intel_platform]
+
+    tags = get_container_tags(
+        mock_client, "google/gemma-3-27b-it", "xe9680-nvidia-h100"
+    )
+
+    assert tags == []

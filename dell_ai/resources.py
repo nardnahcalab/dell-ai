@@ -319,6 +319,33 @@ def inject_host_port(snippet: str, port: int) -> str:
 
 
 # ---------------------------------------------------------------------------
+# Container image tag injection
+# ---------------------------------------------------------------------------
+
+# Matches the DEH image reference and stops at whitespace or quotes, so it works
+# for bare Docker image args and quoted/unquoted Kubernetes manifest values alike.
+_DEH_IMAGE_RE = re.compile(r"registry\.dell\.huggingface\.co/[^\s\"']+")
+
+
+def inject_image_tag(snippet: str, tag: str) -> str:
+    """Set the tag on every DEH container image reference in the snippet.
+
+    The Dell Enterprise Hub image (``registry.dell.huggingface.co/...``) is
+    returned untagged by the API. This appends ``:tag``, replacing an existing
+    tag if one is present. Works for both Docker commands and Kubernetes
+    manifests, and updates every occurrence so all references stay consistent.
+    """
+
+    def _set_tag(match: "re.Match[str]") -> str:
+        image = match.group(0)
+        # The registry host carries no port, so any ':' present is an existing tag.
+        base = image.split(":", 1)[0]
+        return f"{base}:{tag}"
+
+    return _DEH_IMAGE_RE.sub(_set_tag, snippet)
+
+
+# ---------------------------------------------------------------------------
 # Local weights / HF cache injection
 # ---------------------------------------------------------------------------
 

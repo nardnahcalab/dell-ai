@@ -111,12 +111,38 @@ snippet = client.get_deployment_snippet(
     platform_id="xe9680-nvidia-h200",
     engine="docker",
     goodput="balanced",    # balanced | long-context | high-concurrency | performance
+    image_tag="vllm-v0.11.2",  # optional; pin a specific container image tag
 )
 ```
 
 Not every (model, platform, scenario) combination has an optimized config; the
 API is the source of truth and raises `ResourceNotFoundError` with a message
 like `No optimized config for "balanced" scenario on this SKU.` when it doesn't.
+
+### Container image tags
+
+The API returns an **untagged** image reference. Pass `image_tag` to
+`get_deployment_snippet` / `deploy_model` to pin a specific tag; it is validated
+against the tags published for the platform's accelerator vendor, and
+`ValidationError` (with `valid_values`) is raised for an unknown tag. Discover
+the valid tags first:
+
+```python
+tags = client.get_container_tags(
+    model_id="meta-llama/Llama-4-Maverick-17B-128E-Instruct",
+    platform_id="xe9680-nvidia-h200",
+)
+# Returns List[ContainerTag] (fields: id, contains_weights) for the platform's
+# vendor; empty list if none are published. `contains_weights` marks images that
+# already bundle the model weights.
+print([t.id for t in tags])
+```
+
+```bash
+# List the tags accepted by --image-tag, then pin one
+dell-ai models list-tags -m <model_id> -p <platform_id>
+dell-ai models get-snippet -m <model_id> -p <platform_id> -e docker --gpus 8 --image-tag vllm-v0.11.2
+```
 
 ### Goodput scenarios reference data
 
@@ -209,6 +235,7 @@ result = client.deploy_model(
     num_gpus=8,                   # or goodput="balanced" (omit num_gpus)
     num_replicas=1,
     detach=True,                  # False = run in foreground
+    # image_tag="vllm-v0.11.2",            # pin a container image tag (see get_container_tags)
     # local_dir="/data/weights",           # mount local weights (Docker only)
     # hf_cache_dir="~/.cache/huggingface",  # or reuse an HF cache (mutually exclusive)
 )
@@ -232,6 +259,9 @@ dell-ai models deploy -m <model_id> -p <platform_id> -e docker --goodput balance
 # Kubernetes / foreground
 dell-ai models deploy -m <model_id> -p <platform_id> -e kubernetes --gpus 8
 dell-ai models deploy -m <model_id> -p <platform_id> -e docker --no-detach
+
+# Pin a specific container image tag (see 'dell-ai models list-tags')
+dell-ai models deploy -m <model_id> -p <platform_id> -e docker --gpus 8 --image-tag vllm-v0.11.2
 
 # Serve local weights instead of downloading (Docker only; path must exist; mutually exclusive)
 dell-ai models deploy -m <model_id> -p <platform_id> -e docker --gpus 8 --local-dir /data/weights

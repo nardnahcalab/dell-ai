@@ -21,6 +21,7 @@ from dell_ai.cli.utils import (
     get_skills,
     print_apps_table,
     print_compatible_platforms_table,
+    print_container_tags_table,
     print_error,
     print_goodput_scenarios_table,
     print_json,
@@ -639,6 +640,56 @@ def models_compatible_platforms(
         print_error(f"Failed to get compatible platforms: {str(e)}")
 
 
+@models_app.command("list-tags")
+def models_list_tags(
+    model_id: str = typer.Option(
+        ...,
+        "--model-id",
+        "-m",
+        help="Model ID in the format 'organization/model_name'",
+    ),
+    platform_id: str = typer.Option(
+        ...,
+        "--platform-id",
+        "-p",
+        help="Platform SKU ID",
+    ),
+    output_format: str = typer.Option(
+        "json",
+        "--format",
+        "-f",
+        help="Output format: 'json' for raw JSON, 'table' for a formatted table",
+    ),
+) -> None:
+    """
+    List the container image tags available for a model on a given platform.
+
+    These are the values accepted by the '--image-tag' option of
+    'models get-snippet' and 'models deploy'. Tags are published per accelerator
+    vendor, so the list is resolved from the platform's vendor.
+
+    Example:
+        dell-ai models list-tags -m google/gemma-3-27b-it -p xe9680-nvidia-h100
+    """
+    try:
+        client = get_client()
+        tags = client.get_container_tags(model_id, platform_id)
+        if not tags:
+            print_warning(
+                f"No container tags are published for {model_id} "
+                f"on platform {platform_id}."
+            )
+            return
+        if output_format == "table":
+            print_container_tags_table(tags)
+        else:
+            print_json([tag.model_dump() for tag in tags])
+    except (ValidationError, ResourceNotFoundError) as e:
+        print_error(str(e))
+    except Exception as e:
+        print_error(f"Failed to list container tags: {str(e)}")
+
+
 @models_app.command("check-access")
 def models_check_access(model_id: str) -> None:
     """
@@ -707,6 +758,15 @@ def models_get_snippet(
             "Cannot be combined with --gpus."
         ),
     ),
+    image_tag: Optional[str] = typer.Option(
+        None,
+        "--image-tag",
+        help=(
+            "Pin a specific container image tag in the snippet (e.g. vllm-v0.11.2). "
+            "Must be one of the tags available for the model/platform "
+            "(see 'dell-ai models list-tags'). Defaults to the untagged image."
+        ),
+    ),
     local_dir: Optional[str] = typer.Option(
         None,
         "--local-dir",
@@ -746,12 +806,14 @@ def models_get_snippet(
         gpus: Number of GPUs to use (manual sizing; required unless --goodput)
         replicas: Number of replicas to deploy
         goodput: Goodput scenario to optimize the snippet for
+        image_tag: Container image tag to pin in the snippet
         local_dir: Local directory with model weights (Docker only)
         hf_cache_dir: HuggingFace cache directory (Docker only)
 
     Examples:
         dell-ai models get-snippet -m google/gemma-3-27b-it -p xe9680-nvidia-h100 -e docker --gpus 8 --replicas 1
         dell-ai models get-snippet -m google/gemma-3-27b-it -p xe9680-nvidia-h100 --goodput balanced
+        dell-ai models get-snippet -m google/gemma-3-27b-it -p xe9680-nvidia-h100 --gpus 8 --image-tag vllm-v0.11.2
         dell-ai models get-snippet -m google/gemma-3-27b-it -p xe9680-nvidia-h100 --gpus 8 --local-dir /data/weights
         dell-ai models get-snippet -m google/gemma-3-27b-it -p xe9680-nvidia-h100 --gpus 8 --hf-cache-dir ~/.cache/huggingface
     """
@@ -797,6 +859,7 @@ def models_get_snippet(
             num_gpus=gpus,
             num_replicas=replicas,
             goodput=goodput,
+            image_tag=image_tag,
         )
         if local_dir is not None:
             snippet = resources.inject_local_dir(snippet, local_dir)
@@ -865,6 +928,15 @@ def models_deploy(
         "--detach/--no-detach",
         help="Whether to run the model in background (detached) mode",
     ),
+    image_tag: Optional[str] = typer.Option(
+        None,
+        "--image-tag",
+        help=(
+            "Pin a specific container image tag before deploying (e.g. vllm-v0.11.2). "
+            "Must be one of the tags available for the model/platform "
+            "(see 'dell-ai models list-tags'). Defaults to the untagged image."
+        ),
+    ),
     local_dir: Optional[str] = typer.Option(
         None,
         "--local-dir",
@@ -897,6 +969,7 @@ def models_deploy(
     Examples:
         dell-ai models deploy -m google/gemma-3-27b-it -p xe9680-nvidia-h100 --gpus 8
         dell-ai models deploy -m google/gemma-3-27b-it -p xe9680-nvidia-h100 --goodput balanced
+        dell-ai models deploy -m google/gemma-3-27b-it -p xe9680-nvidia-h100 --gpus 8 --image-tag vllm-v0.11.2
         dell-ai models deploy -m google/gemma-3-27b-it -p xe9680-nvidia-h100 --gpus 8 --local-dir /data/weights
         dell-ai models deploy -m google/gemma-3-27b-it -p xe9680-nvidia-h100 --gpus 8 --hf-cache-dir ~/.cache/huggingface
     """
@@ -938,6 +1011,7 @@ def models_deploy(
             goodput=goodput,
             local_dir=local_dir,
             hf_cache_dir=hf_cache_dir,
+            image_tag=image_tag,
         )
         if result.get("success"):
             typer.echo("🎉 Deployment initiated successfully!")

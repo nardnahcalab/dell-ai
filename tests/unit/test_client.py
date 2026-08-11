@@ -338,6 +338,7 @@ class TestDellAIClient:
                 num_gpus=1,
                 num_replicas=1,
                 goodput=None,
+                image_tag=None,
             )
 
     def test_list_apps(self):

@@ -17,7 +17,7 @@ from dell_ai.system_utils.system_info import SystemInfo
 if TYPE_CHECKING:
     from dell_ai.apps import App
     from dell_ai.goodput import GoodputReference
-    from dell_ai.models import Model
+    from dell_ai.models import ContainerTag, Model
     from dell_ai.platforms import Platform
 
 
@@ -378,6 +378,7 @@ class DellAIClient:
         num_gpus: Optional[int] = None,
         num_replicas: int = 1,
         goodput: Optional[str] = None,
+        image_tag: Optional[str] = None,
     ) -> str:
         """
         Get a deployment snippet for the specified model and configuration.
@@ -393,12 +394,16 @@ class DellAIClient:
             num_gpus: The number of GPUs to use (omit when using goodput)
             num_replicas: The number of replicas to deploy
             goodput: Goodput scenario to optimize for (e.g. "balanced")
+            image_tag: Container image tag to pin in the snippet (e.g.
+                "vllm-v0.11.2"). Validated against the tags available for the
+                model/platform. When omitted the image is left untagged.
 
         Returns:
             A string containing the deployment snippet (docker command or k8s manifest)
 
         Raises:
-            ValidationError: If any of the input parameters are invalid
+            ValidationError: If any of the input parameters are invalid, or the
+                requested image_tag is not available for the model/platform
             ResourceNotFoundError: If the model or platform is not found
             AuthenticationError: If authentication fails
             APIError: If the API returns an error
@@ -413,7 +418,31 @@ class DellAIClient:
             num_gpus=num_gpus,
             num_replicas=num_replicas,
             goodput=goodput,
+            image_tag=image_tag,
         )
+
+    def get_container_tags(
+        self, model_id: str, platform_id: str
+    ) -> List["ContainerTag"]:
+        """
+        Get the container image tags available for a model on a given platform.
+
+        Args:
+            model_id: The model ID in the format "organization/model_name"
+            platform_id: The platform SKU ID
+
+        Returns:
+            A list of ContainerTag objects available for the model/platform pair.
+
+        Raises:
+            ValidationError: If the model_id format is invalid
+            ResourceNotFoundError: If the model or platform is not found
+            AuthenticationError: If authentication fails
+            APIError: If the API returns an error
+        """
+        from dell_ai import models
+
+        return models.get_container_tags(self, model_id, platform_id)
 
     def get_goodput_scenarios(self) -> "GoodputReference":
         """
@@ -499,6 +528,7 @@ class DellAIClient:
         goodput: Optional[str] = None,
         local_dir: Optional[str] = None,
         hf_cache_dir: Optional[str] = None,
+        image_tag: Optional[str] = None,
     ) -> Dict[str, Any]:
         """
         Deploy a model on the local node.
@@ -518,6 +548,9 @@ class DellAIClient:
             hf_cache_dir: Path to a HuggingFace cache directory. Mounts the folder
                 as the container's HF cache and sets HF_HUB_CACHE accordingly.
                 Mutually exclusive with local_dir.
+            image_tag: Container image tag to pin in the snippet (e.g.
+                "vllm-v0.11.2"). Validated against the tags available for the
+                model/platform. When omitted the image is left untagged.
 
         Returns:
             A dictionary containing deployment execution details.
@@ -540,6 +573,7 @@ class DellAIClient:
             num_gpus=num_gpus,
             num_replicas=num_replicas,
             goodput=goodput,
+            image_tag=image_tag,
         )
 
         gpu_indices: list = []
