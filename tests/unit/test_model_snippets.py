@@ -2,7 +2,7 @@ from unittest.mock import MagicMock
 
 import pytest
 
-from dell_ai import constants
+from dell_ai import constants, resources
 from dell_ai.exceptions import (
     DellAIError,
     GatedRepoAccessError,
@@ -386,6 +386,127 @@ def test_get_deployment_snippet_goodput(mock_client):
 
     # Access is still checked.
     mock_client.check_model_access.assert_called_once_with("google/gemma-3-27b-it")
+
+
+# Model/platform fixtures for the --image-tag path. The nvidia vendor publishes
+# two tags; the platform's vendor ("Nvidia") resolves to the "nvidia" tag list.
+_TAGGED_MODEL = {
+    "repoName": "google/gemma-3-27b-it",
+    "configsDeploy": {
+        "containerTags": {
+            "nvidia": [
+                {"id": "latest", "containsWeights": False},
+                {"id": "vllm-v0.11.2", "containsWeights": True},
+            ],
+            "amd": [{"id": "latest", "containsWeights": False}],
+        },
+        "configPerSku": {
+            "xe9680-nvidia-h100": [{"num_gpus": 8}],
+        },
+    },
+}
+_NVIDIA_PLATFORM = {
+    "id": "xe9680-nvidia-h100",
+    "name": "XE9680 Nvidia H100",
+    "disabled": False,
+    "platformType": "server",
+    "platform": "xe9680",
+    "vendor": "Nvidia",
+    "acceleratorType": "GPU",
+    "accelerator": "h100",
+    "productName": "NVIDIA-H100-80GB-HBM3",
+}
+_TAGGED_SNIPPET = (
+    "docker run -it --gpus 8 "
+    "registry.dell.huggingface.co/enterprise-dell-inference-google-gemma-3-27b-it"
+)
+
+
+def test_get_deployment_snippet_with_image_tag(mock_client):
+    """A valid --image-tag is validated and pinned onto the snippet's image."""
+    # Requests, in order: get_model (validation) -> snippet -> get_platform.
+    # The second get_model (inside tag resolution) is served from the cache.
+    mock_client._make_request.side_effect = [
+        _TAGGED_MODEL,
+        {"snippet": _TAGGED_SNIPPET, "engine": "docker"},
+        _NVIDIA_PLATFORM,
+    ]
+
+    result = get_deployment_snippet(
+        client=mock_client,
+        model_id="google/gemma-3-27b-it",
+        platform_id="xe9680-nvidia-h100",
+        engine="docker",
+        num_gpus=8,
+        num_replicas=1,
+        image_tag="vllm-v0.11.2",
+    )
+
+    assert result.endswith(
+        "enterprise-dell-inference-google-gemma-3-27b-it:vllm-v0.11.2"
+    )
+    assert mock_client._make_request.call_count == 3
+
+
+def test_get_deployment_snippet_invalid_image_tag(mock_client):
+    """An --image-tag not published for the platform's vendor is rejected."""
+    mock_client._make_request.side_effect = [
+        _TAGGED_MODEL,
+        {"snippet": _TAGGED_SNIPPET, "engine": "docker"},
+        _NVIDIA_PLATFORM,
+    ]
+
+    with pytest.raises(ValidationError) as exc_info:
+        get_deployment_snippet(
+            client=mock_client,
+            model_id="google/gemma-3-27b-it",
+            platform_id="xe9680-nvidia-h100",
+            engine="docker",
+            num_gpus=8,
+            num_replicas=1,
+            image_tag="does-not-exist",
+        )
+
+    message = str(exc_info.value)
+    assert "does-not-exist" in message
+    # The error lists the tags actually available for the vendor.
+    assert "vllm-v0.11.2" in message
+    assert "latest" in message
+
+
+def test_inject_image_tag_appends_to_untagged_docker_image():
+    """A bare Docker image reference gets the tag appended."""
+    snippet = "docker run -it registry.dell.huggingface.co/enterprise-foo"
+    result = resources.inject_image_tag(snippet, "vllm-v0.11.2")
+    assert result == (
+        "docker run -it registry.dell.huggingface.co/enterprise-foo:vllm-v0.11.2"
+    )
+
+
+def test_inject_image_tag_replaces_existing_tag():
+    """An existing tag is replaced rather than duplicated."""
+    snippet = "    image: registry.dell.huggingface.co/enterprise-foo:latest"
+    result = resources.inject_image_tag(snippet, "amd-v1")
+    assert result == "    image: registry.dell.huggingface.co/enterprise-foo:amd-v1"
+
+
+def test_inject_image_tag_preserves_quotes_in_k8s():
+    """Quoted Kubernetes image values keep their surrounding quotes."""
+    snippet = '    image: "registry.dell.huggingface.co/enterprise-foo"'
+    result = resources.inject_image_tag(snippet, "nvidia-v2")
+    assert (
+        result == '    image: "registry.dell.huggingface.co/enterprise-foo:nvidia-v2"'
+    )
+
+
+def test_inject_image_tag_updates_all_occurrences():
+    """Every image reference in a manifest is updated so they stay consistent."""
+    snippet = (
+        "image: registry.dell.huggingface.co/enterprise-foo\n"
+        "initImage: registry.dell.huggingface.co/enterprise-foo"
+    )
+    result = resources.inject_image_tag(snippet, "v3")
+    assert result.count("enterprise-foo:v3") == 2
 
 
 def test_get_deployment_snippet_goodput_unavailable(mock_client):

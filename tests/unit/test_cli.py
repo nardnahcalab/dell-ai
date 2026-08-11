@@ -496,7 +496,59 @@ def test_models_get_snippet_success(mock_get_client, runner):
         num_gpus=1,
         num_replicas=1,
         goodput=None,
+        image_tag=None,
     )
+
+
+@patch("dell_ai.cli.main.get_client")
+def test_models_list_tags_success(mock_get_client, runner):
+    """The list-tags command prints the tags returned by the client."""
+    tag = MagicMock()
+    tag.model_dump.return_value = {"id": "vllm-v0.11.2", "contains_weights": True}
+    mock_client = Mock()
+    mock_client.get_container_tags.return_value = [tag]
+    mock_get_client.return_value = mock_client
+
+    result = runner.invoke(
+        app,
+        [
+            "models",
+            "list-tags",
+            "--model-id",
+            "google/gemma-3-27b-it",
+            "--platform-id",
+            "xe9680-nvidia-h100",
+        ],
+    )
+
+    assert result.exit_code == 0
+    assert "vllm-v0.11.2" in result.output
+    mock_client.get_container_tags.assert_called_once_with(
+        "google/gemma-3-27b-it", "xe9680-nvidia-h100"
+    )
+
+
+@patch("dell_ai.cli.main.get_client")
+def test_models_list_tags_empty(mock_get_client, runner):
+    """When no tags are published the command warns instead of printing an empty list."""
+    mock_client = Mock()
+    mock_client.get_container_tags.return_value = []
+    mock_get_client.return_value = mock_client
+
+    result = runner.invoke(
+        app,
+        [
+            "models",
+            "list-tags",
+            "--model-id",
+            "google/gemma-3-27b-it",
+            "--platform-id",
+            "xe9680-nvidia-h100",
+        ],
+    )
+
+    assert result.exit_code == 0
+    assert "No container tags" in result.output
 
 
 @patch("dell_ai.cli.main.get_client")
@@ -986,6 +1038,7 @@ def test_models_get_snippet_goodput(mock_get_client, runner):
         num_gpus=None,
         num_replicas=1,
         goodput="balanced",
+        image_tag=None,
     )
 
 

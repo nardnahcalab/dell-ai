@@ -250,6 +250,29 @@ def print_compatible_platforms_table(results: List[Any]) -> None:
     stdout_console.print(table)
 
 
+def print_container_tags_table(tags: List[Any]) -> None:
+    """
+    Print the container image tags available for a model/platform as a table.
+
+    Args:
+        tags: List of ContainerTag objects (or dicts)
+    """
+    table = Table(title="Container Image Tags")
+    table.add_column("#", style="dim", width=4)
+    table.add_column("Tag", style="green")
+    table.add_column("Contains Weights", justify="center", style="cyan")
+
+    for i, tag in enumerate(tags, 1):
+        data = tag.model_dump() if hasattr(tag, "model_dump") else tag
+        table.add_row(
+            str(i),
+            data.get("id", ""),
+            "yes" if data.get("contains_weights") else "no",
+        )
+
+    stdout_console.print(table)
+
+
 def print_goodput_scenarios_table(reference: Any) -> None:
     """
     Print the goodput scenario definitions as a Rich table.

@@ -88,6 +88,12 @@ dell-ai platforms list
 
 # Generate a Docker deployment snippet
 dell-ai models get-snippet --model-id meta-llama/Llama-4-Maverick-17B-128E-Instruct --platform-id xe9680-nvidia-h200 --engine docker --gpus 8 --replicas 1
+
+# List the container image tags available for a model on a platform
+dell-ai models list-tags --model-id meta-llama/Llama-4-Maverick-17B-128E-Instruct --platform-id xe9680-nvidia-h200
+
+# Pin one of those tags in the snippet
+dell-ai models get-snippet --model-id meta-llama/Llama-4-Maverick-17B-128E-Instruct --platform-id xe9680-nvidia-h200 --engine docker --gpus 8 --image-tag vllm-v0.11.2
 ```
 
 ### Using the SDK
@@ -120,9 +126,17 @@ snippet = client.get_deployment_snippet(
     platform_id="xe9680-nvidia-h200",
     engine="docker",
     num_gpus=8,
-    num_replicas=1
+    num_replicas=1,
+    image_tag="vllm-v0.11.2",  # optional; pin a specific container image tag
 )
 print(snippet)
+
+# Inspect the container image tags available for a model on a platform
+tags = client.get_container_tags(
+    model_id="meta-llama/Llama-4-Maverick-17B-128E-Instruct",
+    platform_id="xe9680-nvidia-h200",
+)
+print([tag.id for tag in tags])
 ```
 
 ## Deploying models and applications

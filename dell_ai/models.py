@@ -351,6 +351,38 @@ def get_compatible_platforms(
     return results
 
 
+def get_container_tags(
+    client: "DellAIClient", model_id: str, platform_id: str
+) -> List[ContainerTag]:
+    """
+    Get the container image tags available for a model on a given platform.
+
+    Tags are published per accelerator vendor (e.g. "nvidia", "amd"), so this
+    resolves the platform's vendor and returns the tags for that vendor.
+
+    Args:
+        client: The Dell AI client
+        model_id: The model ID in the format "organization/model_name"
+        platform_id: The platform SKU ID
+
+    Returns:
+        A list of ContainerTag objects available for the model/platform pair.
+        Empty if the model publishes no tags for the platform's vendor.
+
+    Raises:
+        ValidationError: If the model_id format is invalid
+        ResourceNotFoundError: If the model or platform is not found
+        AuthenticationError: If authentication fails
+        APIError: If the API returns an error
+    """
+    from dell_ai import platforms
+
+    model = get_model(client, model_id)
+    platform = platforms.get_platform(client, platform_id)
+    # container_tags keys are lower-cased vendors; Platform.vendor is capitalized.
+    return model.configs_deploy.container_tags.get(platform.vendor.lower(), [])
+
+
 def _validate_request_schema(
     model_id, platform_id, engine, num_gpus, num_replicas, goodput=None
 ):
@@ -501,6 +533,7 @@ def get_deployment_snippet(
     num_gpus: Optional[int] = None,
     num_replicas: int = 1,
     goodput: Optional[str] = None,
+    image_tag: Optional[str] = None,
 ) -> str:
     """
     Get a deployment snippet for the specified model and configuration.
@@ -518,12 +551,17 @@ def get_deployment_snippet(
         num_replicas: The number of replicas to deploy
         goodput: Goodput scenario to optimize for (e.g. "balanced"); the server
             picks the GPU count and other optimized params
+        image_tag: Container image tag to pin in the snippet (e.g. "vllm-v0.11.2").
+            Validated against the tags available for the model/platform; the API
+            returns an untagged image, so this is applied client-side. When
+            omitted the image is left untagged (its registry default applies).
 
     Returns:
         A string containing the deployment snippet (docker command or k8s manifest)
 
     Raises:
-        ValidationError: If any of the input parameters are invalid
+        ValidationError: If any of the input parameters are invalid, or the
+            requested image_tag is not available for the model/platform
         ResourceNotFoundError: If the model, platform, or configuration is not found
         GatedRepoAccessError: If the model repository is gated and the user doesn't have access
     """
@@ -570,4 +608,36 @@ def get_deployment_snippet(
         if goodput is not None:
             raise
         _handle_resource_not_found(client, e, model_id, platform_id, num_gpus)
-    return SnippetResponse(snippet=response.get("snippet", "")).snippet
+    snippet = SnippetResponse(snippet=response.get("snippet", "")).snippet
+
+    # Step 7: Pin the requested image tag (the API returns an untagged image).
+    if image_tag is not None:
+        snippet = _apply_image_tag(client, snippet, model_id, platform_id, image_tag)
+
+    return snippet
+
+
+def _apply_image_tag(
+    client: "DellAIClient",
+    snippet: str,
+    model_id: str,
+    platform_id: str,
+    image_tag: str,
+) -> str:
+    """Validate ``image_tag`` against available tags and inject it into the snippet."""
+    from dell_ai import resources
+
+    available = get_container_tags(client, model_id, platform_id)
+    available_ids = [tag.id for tag in available]
+    if image_tag not in available_ids:
+        if available_ids:
+            detail = f"Available tags: {', '.join(available_ids)}"
+        else:
+            detail = "No container tags are published for this model/platform."
+        raise ValidationError(
+            f"Image tag '{image_tag}' is not available for model {model_id} "
+            f"on platform {platform_id}. {detail}",
+            parameter="image_tag",
+            valid_values=available_ids,
+        )
+    return resources.inject_image_tag(snippet, image_tag)

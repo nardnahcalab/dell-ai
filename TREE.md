@@ -43,12 +43,18 @@ dell-ai
 │   │
 │   ├── check-access <model_id>           Check access to a (gated) model repository
 │   │
+│   ├── list-tags                         List container image tags for a model/platform
+│   │   ├── --model-id, -m <model_id>     Model ID (required)
+│   │   ├── --platform-id, -p <SKU>       Platform SKU ID (required)
+│   │   └── --format, -f <json|table>     Output format [json]
+│   │
 │   ├── get-snippet                       Generate a deployment snippet for a model
 │   │   ├── --model-id, -m <model_id>     Model ID (required)
 │   │   ├── --platform-id, -p <SKU>       Platform SKU ID (required)
 │   │   ├── --engine, -e <docker|kubernetes>  Deployment engine [docker]
 │   │   ├── --gpus, -g <INT>              Number of GPUs (min 1) [1]
-│   │   └── --replicas, -r <INT>          Number of replicas (min 1) [1]
+│   │   ├── --replicas, -r <INT>          Number of replicas (min 1) [1]
+│   │   └── --image-tag <TAG>             Pin a container image tag (see 'models list-tags')
 │   │
 │   └── deploy                            Deploy a model directly on the local node
 │       ├── --model-id, -m <model_id>     Model ID (required)
@@ -56,6 +62,7 @@ dell-ai
 │       ├── --engine, -e <docker|kubernetes>  Deployment engine [docker]
 │       ├── --gpus, -g <INT>              Number of GPUs (min 1) [1]
 │       ├── --replicas, -r <INT>          Number of replicas (min 1) [1]
+│       ├── --image-tag <TAG>             Pin a container image tag (see 'models list-tags')
 │       └── --detach / --no-detach        Run in background (detached) mode [detach]
 │
 ├── platforms                            Platform commands
