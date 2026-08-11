@@ -1,6 +1,7 @@
 """Tests for the Dell AI CLI commands."""
 
 import json
+import re
 from unittest.mock import MagicMock, Mock, patch
 
 import pytest
@@ -603,9 +604,15 @@ def test_models_get_snippet_validation_error(mock_get_client, runner):
         env={"COLUMNS": "200"},
     )
 
+    # Strip ANSI escape codes: in CI `rich` colorizes the error, injecting escape
+    # sequences mid-token (e.g. between the two dashes of `--gpus`), which would
+    # break the substring assertions below. `COLUMNS=200` above keeps the message
+    # on a single (unwrapped) line.
+    output = re.sub(r"\x1b\[[0-9;]*m", "", result.output)
+
     # Check result - Typer performs its own validation for this case
-    assert "Invalid value for '--gpus'" in result.output
-    assert "0 is not in the range" in result.output
+    assert "Invalid value for '--gpus'" in output
+    assert "0 is not in the range" in output
 
 
 def test_utils_get_report_print(commandline_patches, runner, mock_sys_info):
