@@ -574,9 +574,6 @@ def test_models_get_snippet_requires_gpus_or_goodput(mock_get_client, runner):
     mock_client.get_deployment_snippet.assert_not_called()
 
 
-@pytest.mark.skip(
-    reason="`rich` messes up the output in the CI, whilst this runs locally just fine"
-)
 @patch("dell_ai.cli.main.get_client")
 def test_models_get_snippet_validation_error(mock_get_client, runner):
     """Test the models get-snippet command with validation error."""
@@ -587,7 +584,10 @@ def test_models_get_snippet_validation_error(mock_get_client, runner):
     )
     mock_get_client.return_value = mock_client
 
-    # Run the command with invalid parameters
+    # Run the command with invalid parameters.
+    # Force a wide terminal width so `rich` doesn't wrap the error box across
+    # lines (which would break the substring assertions below); the wrap point
+    # otherwise depends on the CI terminal width.
     result = runner.invoke(
         app,
         [
@@ -600,6 +600,7 @@ def test_models_get_snippet_validation_error(mock_get_client, runner):
             "--gpus",
             "0",  # Invalid value
         ],
+        env={"COLUMNS": "200"},
     )
 
     # Check result - Typer performs its own validation for this case
