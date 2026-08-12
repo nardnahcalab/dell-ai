@@ -4,17 +4,15 @@
 [![License](https://img.shields.io/badge/License-Apache_2.0-blue.svg)](https://opensource.org/licenses/Apache-2.0)
 [![Python Versions](https://img.shields.io/badge/python-3.10%2B-blue)](https://www.python.org/downloads/)
 
-A Python SDK and CLI for interacting with the Dell Enterprise Hub (DEH), allowing users to programmatically browse available AI models, view platform configurations, and generate deployment snippets for running AI models on Dell systems.
-
-> [!WARNING]
-> This library is intended to be used with the Dell Enterprise Hub on Dell instances,
-> and is subject to changes before the 0.1.0 release!
+A Python SDK and CLI for interacting with the Dell Enterprise Hub (DEH), allowing users to programmatically browse available AI models, view platform configurations, generate deployment snippets or run DEH models and apps on Dell systems.
 
 ## Features
 
-- Browse available AI models
+- Browse available AI models and apps
 - View platform configurations
 - Generate deployment snippets for running AI models on Dell hardware
+- Size deployments for a goodput scenario (e.g. `balanced`) and let the server pick the optimal configuration, instead of choosing a GPU count by hand
+- Inspect goodput scenario definitions and per-SKU SLO targets
 - Deploy models and applications directly onto the local node, with automatic host port and GPU management
 - Track, discover, and tear down local deployments through a deployment registry
 - Manage local and global environment variables
@@ -217,6 +215,79 @@ print(result["success"])
 > Deployment executes the snippet returned by the Dell Enterprise Hub on the
 > local machine, so it requires the relevant tooling (`docker`, `kubectl`, or
 > `helm`) to be installed and configured.
+
+## Optimized Configurations
+
+Instead of picking GPU count and deployment args by hand, `dell-ai` and **Dell Enterprise Hub** offer optimized configurations for a snippet or deployment for a set of **goodput scenarios**.
+
+Goodput scenarios are named workload profiles (e.g. `balanced`) with an
+associated set of Service Level Objectives (SLOs). When you pass `--goodput`
+(CLI) or `goodput=` (SDK), DEH offers the optimal configuration for that
+scenario on the target platform.
+
+> [!NOTE]
+> Check out the [Goodput Scenarios documentation](https://dell.huggingface.co/docs/optimized-deployments/goodput-scenarios) on DEH to learn more.
+
+The available scenarios, the SLO field descriptions, and the SLO *targets* per
+SKU come from global reference data (`dell-ai models goodput-scenarios`).
+
+### Using the CLI
+
+```bash
+# List the available goodput scenarios and SLO field descriptions
+dell-ai models goodput-scenarios --format table
+
+# Drill into the SLO targets for a single SKU (scenario x SLO-field grid)
+dell-ai models goodput-scenarios --sku xe9680-nvidia-h100 --format table
+
+# Generate a snippet optimized for a scenario instead of a fixed GPU count
+dell-ai models get-snippet -m google/gemma-3-27b-it -p xe9680-nvidia-h100 --engine docker --goodput balanced
+
+# Deploy optimized for a scenario (mutually exclusive with --gpus)
+dell-ai models deploy -m google/gemma-3-27b-it -p xe9680-nvidia-h100 --engine docker --goodput balanced
+```
+
+> [!NOTE]
+> `--goodput`/`goodput` and `--gpus`/`num_gpus`
+> are **mutually exclusive** — provide exactly one.
+
+### Using the SDK
+
+```python
+from dell_ai.client import DellAIClient
+
+client = DellAIClient()
+
+# Get the global goodput reference data (scenarios, SLO docs, SLO targets per SKU)
+reference = client.get_goodput_scenarios()
+for scenario in reference.scenarios:
+    print(scenario.id, "-", scenario.label)
+
+# Inspect the SLO targets for a specific SKU
+slos = reference.slos_by_sku.get("xe9680-nvidia-h100", {})
+print({scenario: slo.model_dump() for scenario, slo in slos.items()})
+
+# Generate a snippet optimized for a scenario (omit num_gpus)
+snippet = client.get_deployment_snippet(
+    model_id="google/gemma-3-27b-it",
+    platform_id="xe9680-nvidia-h100",
+    engine="docker",
+    goodput="balanced",  # mutually exclusive with num_gpus
+    num_replicas=1,
+)
+print(snippet)
+
+# Deploy optimized for a scenario
+result = client.deploy_model(
+    model_id="google/gemma-3-27b-it",
+    platform_id="xe9680-nvidia-h100",
+    engine="docker",
+    goodput="balanced",  # mutually exclusive with num_gpus
+    num_replicas=1,
+    detach=True,
+)
+print(result["success"], result.get("endpoint"))
+```
 
 ## Deployment registry
 
