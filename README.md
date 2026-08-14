@@ -238,7 +238,7 @@ SKU come from global reference data (`dell-ai models goodput-scenarios`).
 dell-ai models goodput-scenarios --format table
 
 # Drill into the SLO targets for a single SKU (scenario x SLO-field grid)
-dell-ai models goodput-scenarios --sku xe9680-nvidia-h100 --format table
+dell-ai models goodput-scenarios --platform-id xe9680-nvidia-h100 --format table
 
 # Generate a snippet optimized for a scenario instead of a fixed GPU count
 dell-ai models get-snippet -m google/gemma-3-27b-it -p xe9680-nvidia-h100 --engine docker --goodput balanced
@@ -264,7 +264,7 @@ for scenario in reference.scenarios:
     print(scenario.id, "-", scenario.label)
 
 # Inspect the SLO targets for a specific SKU
-slos = reference.slos_by_sku.get("xe9680-nvidia-h100", {})
+slos = reference.slos_by_platform_id.get("xe9680-nvidia-h100", {})
 print({scenario: slo.model_dump() for scenario, slo in slos.items()})
 
 # Generate a snippet optimized for a scenario (omit num_gpus)

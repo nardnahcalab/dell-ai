@@ -2,7 +2,7 @@
 
 :func:`get_goodput_scenarios` returns the global reference data
 (``GET /goodput-scenarios``): scenario definitions, SLO field docs, and the SLO
-*targets* per SKU. This is global and static, so it is cached on disk like model
+*targets* per platform. This is global and static, so it is cached on disk like model
 details.
 
 To generate a snippet optimized for a goodput scenario, pass ``goodput`` to
@@ -36,7 +36,7 @@ class Scenario(BaseModel):
 
 class Slo(BaseModel):
     """
-    SLO targets for a (SKU, scenario) pair.
+    SLO targets for a (platform_id, scenario) pair.
     """
 
     model_config = {
@@ -65,10 +65,10 @@ class GoodputReference(BaseModel):
     slo_field_descriptions: Dict[str, str] = Field(
         default_factory=dict, alias="sloFieldDescriptions"
     )
-    # Sparse: keyed by SkuId, then scenario id. SKUs without documented SLOs
-    # (e.g. AMD/Intel platforms) are omitted entirely.
-    slos_by_sku: Dict[str, Dict[str, Slo]] = Field(
-        default_factory=dict, alias="slosBySku"
+    # Sparse: keyed by platform ID, then scenario id. Platforms without documented SLOs
+    # (e.g. AMD/Intel) are omitted entirely.
+    slos_by_platform_id: Dict[str, Dict[str, Slo]] = Field(
+        default_factory=dict, alias="slosByPlatformId"
     )
 
 

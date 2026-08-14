@@ -1124,9 +1124,10 @@ def models_undeploy(
 
 @models_app.command("goodput-scenarios")
 def models_goodput_scenarios(
-    sku: Optional[str] = typer.Option(
+    platform_id: Optional[str] = typer.Option(
         None,
-        "--sku",
+        "--platform-id",
+        "-p",
         help="Show the SLO targets for a single SKU (scenario x SLO-field view)",
     ),
     output_format: str = typer.Option(
@@ -1142,28 +1143,28 @@ def models_goodput_scenarios(
     Returns the scenario definitions, SLO field descriptions, and SLO targets
     per SKU. This data is static and shared across all models.
 
-    Pass --sku to drill into the SLO targets for a single SKU, broken down by
+    Pass --platform-id to drill into the SLO targets for a single SKU, broken down by
     scenario. In table view this renders a scenario x SLO-field grid.
 
     Examples:
         dell-ai models goodput-scenarios --format table
-        dell-ai models goodput-scenarios --sku xe9680-nvidia-h100 -f table
+        dell-ai models goodput-scenarios --platform-id xe9680-nvidia-h100 -f table
     """
     try:
         client = get_client()
         reference = client.get_goodput_scenarios()
 
-        if sku is not None:
-            slos = reference.slos_by_sku.get(sku)
+        if platform_id is not None:
+            slos = reference.slos_by_platform_id.get(platform_id)
             if not slos:
-                documented = sorted(reference.slos_by_sku.keys())
+                documented = sorted(reference.slos_by_platform_id.keys())
                 sku_list = ", ".join(documented) if documented else "none"
                 print_error(
-                    f"No SLO targets documented for SKU '{sku}'. "
+                    f"No SLO targets documented for SKU '{platform_id}'. "
                     f"SKUs with documented SLOs: {sku_list}"
                 )
             if output_format == "table":
-                print_slos_table(sku, slos)
+                print_slos_table(platform_id, slos)
             else:
                 print_json({s: slo.model_dump() for s, slo in slos.items()})
             return
