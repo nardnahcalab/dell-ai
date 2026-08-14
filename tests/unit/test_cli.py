@@ -925,7 +925,7 @@ def test_models_compatible_platforms_table_format(runner, mock_client):
 
 
 def _mock_goodput_reference():
-    """Build a real GoodputReference so .slos_by_sku / .model_dump() behave."""
+    """Build a real GoodputReference so .slos_by_platform_id / .model_dump() behave."""
     from dell_ai.goodput import GoodputReference
 
     return GoodputReference.model_validate(
@@ -956,7 +956,7 @@ def test_models_goodput_scenarios_json(runner, mock_client):
     result = runner.invoke(app, ["models", "goodput-scenarios"])
 
     assert result.exit_code == 0
-    assert '"slos_by_sku"' in result.output
+    assert '"slos_by_platform_id"' in result.output
     assert "balanced" in result.output
     mock_client.get_goodput_scenarios.assert_called_once_with()
 

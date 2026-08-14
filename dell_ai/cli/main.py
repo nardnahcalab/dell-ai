@@ -1155,9 +1155,9 @@ def models_goodput_scenarios(
         reference = client.get_goodput_scenarios()
 
         if platform_id is not None:
-            slos = reference.slos_by_sku.get(platform_id)
+            slos = reference.slos_by_platform_id.get(platform_id)
             if not slos:
-                documented = sorted(reference.slos_by_sku.keys())
+                documented = sorted(reference.slos_by_platform_id.keys())
                 sku_list = ", ".join(documented) if documented else "none"
                 print_error(
                     f"No SLO targets documented for SKU '{platform_id}'. "

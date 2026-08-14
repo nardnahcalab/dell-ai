@@ -66,7 +66,7 @@ def test_get_goodput_scenarios(mock_client):
     assert reference.scenarios[0].label == "Balanced"
     assert "maxModelContext" in reference.slo_field_descriptions
 
-    slo = reference.slos_by_sku["xe9680-nvidia-h100"]["balanced"]
+    slo = reference.slos_by_platform_id["xe9680-nvidia-h100"]["balanced"]
     assert slo.max_model_context == 8192
     assert slo.virtual_users == 128
     assert slo.input_tokens == [64, 4096]
