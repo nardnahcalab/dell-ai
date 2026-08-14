@@ -154,10 +154,10 @@ ref = client.get_goodput_scenarios()
 # GoodputReference fields:
 #   scenarios            -> List[Scenario] (id, label, description)
 #   slo_field_descriptions -> Dict[str, str]
-#   slos_by_sku          -> Dict[SkuId, Dict[scenario, Slo]] (sparse)
+#   slos_by_platform_id          -> Dict[PlatformId, Dict[scenario, Slo]] (sparse)
 # Slo fields: max_model_context, virtual_users, input_tokens [min,max], output_tokens [min,max]
 
-slo = ref.slos_by_sku.get("xe9680-nvidia-h100", {}).get("balanced")
+slo = ref.slos_by_platform_id.get("xe9680-nvidia-h100", {}).get("balanced")
 ```
 
 ## Platforms

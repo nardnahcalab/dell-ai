@@ -68,7 +68,7 @@ class GoodputReference(BaseModel):
     # Sparse: keyed by platform ID, then scenario id. Platforms without documented SLOs
     # (e.g. AMD/Intel) are omitted entirely.
     slos_by_platform_id: Dict[str, Dict[str, Slo]] = Field(
-        default_factory=dict, alias="slosByPlatformID"
+        default_factory=dict, alias="slosByPlatformId"
     )
 
 

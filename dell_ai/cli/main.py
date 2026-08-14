@@ -1125,11 +1125,11 @@ def models_undeploy(
 @models_app.command("goodput-scenarios")
 def models_goodput_scenarios(
     platform_id: str = typer.Option(
-            ...,
-            "--platform-id",
-            "-p",
-            help="Show the SLO targets for a single SKU (scenario x SLO-field view)",
-        ),
+        ...,
+        "--platform-id",
+        "-p",
+        help="Show the SLO targets for a single SKU (scenario x SLO-field view)",
+    ),
     output_format: str = typer.Option(
         "json",
         "--format",

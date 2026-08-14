@@ -993,7 +993,14 @@ def test_models_goodput_scenarios_sku_table(runner, mock_client):
 
     result = runner.invoke(
         app,
-        ["models", "goodput-scenarios", "--platform-id", "xe9680-nvidia-h100", "-f", "table"],
+        [
+            "models",
+            "goodput-scenarios",
+            "--platform-id",
+            "xe9680-nvidia-h100",
+            "-f",
+            "table",
+        ],
     )
 
     assert result.exit_code == 0
