@@ -973,11 +973,11 @@ def test_models_goodput_scenarios_table(runner, mock_client):
 
 
 def test_models_goodput_scenarios_sku_json(runner, mock_client):
-    """--sku narrows JSON output to that SKU's scenario->SLO map."""
+    """--platform-id narrows JSON output to that SKU's scenario->SLO map."""
     mock_client.get_goodput_scenarios.return_value = _mock_goodput_reference()
 
     result = runner.invoke(
-        app, ["models", "goodput-scenarios", "--sku", "xe9680-nvidia-h100"]
+        app, ["models", "goodput-scenarios", "--platform-id", "xe9680-nvidia-h100"]
     )
 
     assert result.exit_code == 0
@@ -988,12 +988,12 @@ def test_models_goodput_scenarios_sku_json(runner, mock_client):
 
 
 def test_models_goodput_scenarios_sku_table(runner, mock_client):
-    """--sku with table renders the scenario x SLO-field grid."""
+    """--platform-id with table renders the scenario x SLO-field grid."""
     mock_client.get_goodput_scenarios.return_value = _mock_goodput_reference()
 
     result = runner.invoke(
         app,
-        ["models", "goodput-scenarios", "--sku", "xe9680-nvidia-h100", "-f", "table"],
+        ["models", "goodput-scenarios", "--platform-id", "xe9680-nvidia-h100", "-f", "table"],
     )
 
     assert result.exit_code == 0
@@ -1007,7 +1007,7 @@ def test_models_goodput_scenarios_sku_not_documented(runner, mock_client):
     mock_client.get_goodput_scenarios.return_value = _mock_goodput_reference()
 
     result = runner.invoke(
-        app, ["models", "goodput-scenarios", "--sku", "r760xa-nvidia-l40s"]
+        app, ["models", "goodput-scenarios", "--platform-id", "r760xa-nvidia-l40s"]
     )
 
     assert result.exit_code == 1
