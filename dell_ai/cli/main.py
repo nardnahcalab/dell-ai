@@ -1124,8 +1124,8 @@ def models_undeploy(
 
 @models_app.command("goodput-scenarios")
 def models_goodput_scenarios(
-    platform_id: str = typer.Option(
-        ...,
+    platform_id: Optional[str] = typer.Option(
+        None,
         "--platform-id",
         "-p",
         help="Show the SLO targets for a single SKU (scenario x SLO-field view)",

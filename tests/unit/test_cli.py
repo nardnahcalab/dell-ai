@@ -935,7 +935,7 @@ def _mock_goodput_reference():
                 {"id": "long-context", "label": "Long context", "description": "Big."},
             ],
             "sloFieldDescriptions": {"virtualUsers": "Concurrent users."},
-            "slosBySku": {
+            "slosByPlatformId": {
                 "xe9680-nvidia-h100": {
                     "balanced": {
                         "maxModelContext": 8192,
@@ -1010,7 +1010,7 @@ def test_models_goodput_scenarios_sku_table(runner, mock_client):
 
 
 def test_models_goodput_scenarios_sku_not_documented(runner, mock_client):
-    """An undocumented SKU errors and lists the documented ones."""
+    """An undocumented platform id errors and lists the documented ones."""
     mock_client.get_goodput_scenarios.return_value = _mock_goodput_reference()
 
     result = runner.invoke(

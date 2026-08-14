@@ -25,7 +25,7 @@ MOCK_GOODPUT_REFERENCE = {
         "inputTokens": "Input-token range sampled per request.",
         "outputTokens": "Output-token range sampled per request.",
     },
-    "slosBySku": {
+    "slosByPlatformId": {
         "xe9680-nvidia-h100": {
             "balanced": {
                 "maxModelContext": 8192,
